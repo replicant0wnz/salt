@@ -2,6 +2,7 @@
 '''
 Module for viewing and modifying sysctl parameters
 '''
+from __future__ import absolute_import
 
 # Import salt libs
 import salt.utils
@@ -13,9 +14,12 @@ __virtualname__ = 'sysctl'
 
 def __virtual__():
     '''
-    Only run on FreeBSD systems
+    Only runs on FreeBSD systems
     '''
-    return __virtualname__ if __grains__['os'] == 'FreeBSD' else False
+    if __grains__['os'] == 'FreeBSD':
+        return __virtualname__
+    return (False, 'The freebsd_sysctl execution module cannot be loaded: '
+            'only available on FreeBSD systems.')
 
 
 def _formatfor(name, value, config, tail=''):
@@ -25,7 +29,7 @@ def _formatfor(name, value, config, tail=''):
         return '{0}={1}{2}'.format(name, value, tail)
 
 
-def show():
+def show(config_file=False):
     '''
     Return a list of sysctl parameters for this minion
 
@@ -76,7 +80,7 @@ def get(name):
         salt '*' sysctl.get hw.physmem
     '''
     cmd = 'sysctl -n {0}'.format(name)
-    out = __salt__['cmd.run'](cmd)
+    out = __salt__['cmd.run'](cmd, python_shell=False)
     return out
 
 
@@ -92,7 +96,7 @@ def assign(name, value):
     '''
     ret = {}
     cmd = 'sysctl {0}="{1}"'.format(name, value)
-    data = __salt__['cmd.run_all'](cmd)
+    data = __salt__['cmd.run_all'](cmd, python_shell=False)
 
     if data['retcode'] != 0:
         raise CommandExecutionError('sysctl failed: {0}'.format(

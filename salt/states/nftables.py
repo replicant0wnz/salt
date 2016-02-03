@@ -3,7 +3,7 @@
 Management of nftables
 ======================
 
-This is an iptables-specific module designed to manage Linux firewalls. It is
+This is an nftables-specific module designed to manage Linux firewalls. It is
 expected that this state module, and other system-specific firewall states, may
 at some point be deprecated in favor of a more generic `firewall` state.
 
@@ -101,6 +101,7 @@ at some point be deprecated in favor of a more generic `firewall` state.
 
 
 '''
+from __future__ import absolute_import
 
 # Import salt libs
 from salt.state import STATE_INTERNAL_KEYWORDS as _STATE_INTERNAL_KEYWORDS
@@ -115,7 +116,7 @@ def __virtual__():
 
 def chain_present(name, table='filter', table_type=None, hook=None, priority=None, family='ipv4'):
     '''
-    .. versionadded:: 2014.1.0 (Hydrogen)
+    .. versionadded:: 2014.7.0
 
     Verify the chain is exist.
 
@@ -169,7 +170,7 @@ def chain_present(name, table='filter', table_type=None, hook=None, priority=Non
 
 def chain_absent(name, table='filter', family='ipv4'):
     '''
-    .. versionadded:: 2014.1.0 (Hydrogen)
+    .. versionadded:: 2014.7.0
 
     Verify the chain is absent.
 
@@ -195,7 +196,7 @@ def chain_absent(name, table='filter', family='ipv4'):
         if command is True:
             ret['changes'] = {'locale': name}
             ret['result'] = True
-            ret['comment'] = ('iptables {0} chain in {1} table delete success for {2}'
+            ret['comment'] = ('nftables {0} chain in {1} table delete success for {2}'
                               .format(name, table, family))
         else:
             ret['result'] = False
@@ -226,7 +227,7 @@ def append(name, family='ipv4', **kwargs):
         Network family, ipv4 or ipv6.
 
     All other arguments are passed in with the same name as the long option
-    that would normally be used for iptables, with one exception: `--state` is
+    that would normally be used for nftables, with one exception: `--state` is
     specified as `connstate` instead of `state` (not to be confused with
     `ctstate`).
     '''
@@ -281,7 +282,7 @@ def append(name, family='ipv4', **kwargs):
 
 def insert(name, family='ipv4', **kwargs):
     '''
-    .. versionadded:: 2014.1.0 (Hydrogen)
+    .. versionadded:: 2014.7.0
 
     Insert a rule into a chain
 
@@ -293,7 +294,7 @@ def insert(name, family='ipv4', **kwargs):
         Networking family, either ipv4 or ipv6
 
     All other arguments are passed in with the same name as the long option
-    that would normally be used for iptables, with one exception: `--state` is
+    that would normally be used for nftables, with one exception: `--state` is
     specified as `connstate` instead of `state` (not to be confused with
     `ctstate`).
     '''
@@ -347,7 +348,7 @@ def insert(name, family='ipv4', **kwargs):
 
 def delete(name, family='ipv4', **kwargs):
     '''
-    .. versionadded:: 2014.1.0 (Hydrogen)
+    .. versionadded:: 2014.7.0
 
     Delete a rule to a chain
 
@@ -359,7 +360,7 @@ def delete(name, family='ipv4', **kwargs):
         Networking family, either ipv4 or ipv6
 
     All other arguments are passed in with the same name as the long option
-    that would normally be used for iptables, with one exception: `--state` is
+    that would normally be used for nftables, with one exception: `--state` is
     specified as `connstate` instead of `state` (not to be confused with
     `ctstate`).
     '''
@@ -413,7 +414,7 @@ def delete(name, family='ipv4', **kwargs):
             if kwargs['save']:
                 __salt__['nftables.save'](filename=None, family=family)
                 ret['comment'] = ('Deleted and Saved nftables rule for {0} for {1}'
-                                  '{2}'.format(name, command.strip()), family)
+                                  '{2}'.format(name, command.strip(), family))
         return ret
     else:
         ret['result'] = False
@@ -424,64 +425,9 @@ def delete(name, family='ipv4', **kwargs):
         return ret
 
 
-def set_policy(name, family='ipv4', **kwargs):
-    '''
-    .. versionadded:: 2014.1.0 (Hydrogen)
-
-    Sets the default policy for iptables firewall tables
-
-    family
-        Networking family, either ipv4 or ipv6
-
-    '''
-    ret = {'name': name,
-        'changes': {},
-        'result': None,
-        'comment': ''}
-
-    for ignore in _STATE_INTERNAL_KEYWORDS:
-        if ignore in kwargs:
-            del kwargs[ignore]
-
-    if __salt__['iptables.get_policy'](
-            kwargs['table'],
-            kwargs['chain'],
-            family) == kwargs['policy']:
-        ret['result'] = True
-        ret['comment'] = ('iptables default policy for {0} for {1} already set to {2}'
-                          .format(kwargs['table'], family, kwargs['policy']))
-        return ret
-
-    if not __salt__['iptables.set_policy'](
-            kwargs['table'],
-            kwargs['chain'],
-            kwargs['policy'],
-            family):
-        ret['changes'] = {'locale': name}
-        ret['result'] = True
-        ret['comment'] = 'Set default policy for {0} to {1} family {2}'.format(
-            kwargs['chain'],
-            kwargs['policy'],
-            family
-        )
-        if 'save' in kwargs:
-            if kwargs['save']:
-                __salt__['iptables.save'](filename=None, family=family)
-                ret['comment'] = 'Set and Saved default policy for {0} to {1} family {2}'.format(
-                    kwargs['chain'],
-                    kwargs['policy'],
-                    family
-                )
-        return ret
-    else:
-        ret['result'] = False
-        ret['comment'] = 'Failed to set iptables default policy'
-        return ret
-
-
 def flush(name, family='ipv4', **kwargs):
     '''
-    .. versionadded:: 2014.1.0 (Hydrogen)
+    .. versionadded:: 2014.7.0
 
     Flush current nftables state
 
@@ -498,7 +444,7 @@ def flush(name, family='ipv4', **kwargs):
         if ignore in kwargs:
             del kwargs[ignore]
 
-    if not 'table' in kwargs:
+    if 'table' not in kwargs:
         kwargs['table'] = 'filter'
 
     if not __salt__['nftables.check_table'](kwargs['table'], family=family):
@@ -509,12 +455,13 @@ def flush(name, family='ipv4', **kwargs):
         )
         return ret
 
-    if not 'chain' in kwargs:
+    if 'chain' not in kwargs:
         kwargs['chain'] = ''
     else:
         if not __salt__['nftables.check_chain'](kwargs['table'], kwargs['chain'], family=family):
             ret['result'] = False
             ret['comment'] = 'Failed to flush chain {0} in table {1} in family {2}, chain does not exist.'.format(
+                kwargs['chain'],
                 kwargs['table'],
                 family
             )
@@ -531,5 +478,5 @@ def flush(name, family='ipv4', **kwargs):
         return ret
     else:
         ret['result'] = False
-        ret['comment'] = 'Failed to flush iptables rules'
+        ret['comment'] = 'Failed to flush nftables rules'
         return ret

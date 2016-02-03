@@ -1,6 +1,6 @@
-======================
-SaltStack Walk-through
-======================
+==================
+Salt in 10 Minutes
+==================
 
 .. note::
     Welcome to SaltStack! I am excited that you are interested in Salt and
@@ -27,17 +27,15 @@ that can solve many specific problems in an infrastructure.
 
 The backbone of Salt is the remote execution engine, which creates a high-speed,
 secure and bi-directional communication net for groups of systems. On top of this
-communication system, Salt provides an extremely fast, flexible and easy-to-use
+communication system, Salt provides an extremely fast, flexible, and easy-to-use
 configuration management system called ``Salt States``.
 
 Installing Salt
 ---------------
 
-SaltStack has been made to be very easy to install and get started. Setting up
-Salt should be as easy as installing Salt via distribution packages on Linux or
-via the Windows installer. The :doc:`installation documents
-</topics/installation/index>` cover platform-specific installation in depth.
-
+SaltStack has been made to be very easy to install and get started. The
+:doc:`installation documents </topics/installation/index>` contain instructions
+for all supported platforms.
 
 Starting Salt
 -------------
@@ -54,7 +52,7 @@ Turning on the Salt Master is easy -- just turn it on! The default configuration
 is suitable for the vast majority of installations. The Salt Master can be
 controlled by the local Linux/Unix service manager:
 
-On Systemd based platforms (OpenSuse, Fedora):
+On Systemd based platforms (newer Debian, OpenSuse, Fedora):
 
 .. code-block:: bash
 
@@ -66,7 +64,7 @@ On Upstart based systems (Ubuntu, older Fedora/RHEL):
 
     service salt-master start
 
-On SysV Init systems (Debian, Gentoo etc.):
+On SysV Init systems (Gentoo, older Debian etc.):
 
 .. code-block:: bash
 
@@ -89,24 +87,13 @@ The Salt Master needs to bind to two TCP network ports on the system. These port
 are ``4505`` and ``4506``. For more in depth information on firewalling these ports,
 the firewall tutorial is available :doc:`here </topics/tutorials/firewall>`.
 
+.. _master-dns:
 
-Setting up a Salt Minion
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. note::
-
-    The Salt Minion can operate with or without a Salt Master. This walk-through
-    assumes that the minion will be connected to the master, for information on
-    how to run a master-less minion please see the master-less quick-start guide:
-
-    :doc:`Masterless Minion Quickstart </topics/tutorials/quickstart>`
-
-The Salt Minion only needs to be aware of one piece of information to run, the
-network location of the master.
-
-By default the minion will look for the DNS name ``salt`` for the master,
-making the easiest approach to set internal DNS to resolve the name ``salt``
-back to the Salt Master IP.
+Finding the Salt Master
+~~~~~~~~~~~~~~~~~~~~~~~
+When a minion starts, by default it searches for a system that resolves to the ``salt`` hostname`` on the network.
+If found, the minion initiates the handshake and key authentication process with the Salt master.
+This means that the easiest configuration approach is to set internal DNS to resolve the name ``salt`` back to the Salt Master IP.
 
 Otherwise, the minion configuration file will need to be edited so that the
 configuration option ``master`` points to the DNS name or the IP of the Salt Master:
@@ -122,6 +109,16 @@ configuration option ``master`` points to the DNS name or the IP of the Salt Mas
 .. code-block:: yaml
 
     master: saltmaster.example.com
+
+Setting up a Salt Minion
+~~~~~~~~~~~~~~~~~~~~~~~~
+.. note::
+
+    The Salt Minion can operate with or without a Salt Master. This walk-through
+    assumes that the minion will be connected to the master, for information on
+    how to run a master-less minion please see the master-less quick-start guide:
+
+    :doc:`Masterless Minion Quickstart </topics/tutorials/quickstart>`
 
 Now that the master can be found, start the minion in the same way as the
 master; with the platform init system or via the command line directly:
@@ -169,6 +166,7 @@ Now that the minion is started, it will generate cryptographic keys and attempt
 to connect to the master. The next step is to venture back to the master server
 and accept the new minion's public key.
 
+.. _using-salt-key:
 
 Using salt-key
 ~~~~~~~~~~~~~~
@@ -184,7 +182,7 @@ master. To list the keys that are on the master:
 
     salt-key -L
 
-The keys that have been rejected, accepted and pending acceptance are listed.
+The keys that have been rejected, accepted, and pending acceptance are listed.
 The easiest way to accept the minion key is to accept all pending keys:
 
 .. code-block:: bash
@@ -193,53 +191,38 @@ The easiest way to accept the minion key is to accept all pending keys:
 
 .. note::
 
-    Keys should be verified! The secure thing to do before accepting a key is
-    to run ``salt-key -p minion-id`` to print the public key for the minion.
-    This can then be compared against the minion's public key file, which is
-    located (on the minion, of course) at ``/etc/salt/pki/minion/minion.pub``.
+    Keys should be verified! Print the master key fingerprint by running ``salt-key -F master``
+    on the Salt master. Copy the ``master.pub`` fingerprint from the Local Keys section,
+    and then set this value as the :conf_minion:`master_finger` in the minion configuration
+    file. Restart the Salt minion.
 
-    On the master::
+    On the master, run ``salt-key -f minion-id`` to print the fingerprint of the
+    minion's public key that was received by the master. On the minion, run
+    ``salt-call key.finger --local`` to print the fingerprint of the minion key.
 
-        # salt-key -p foo.domain.com
-        Accepted Keys:
-        foo.domain.com:  -----BEGIN PUBLIC KEY-----
-        MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA0JcA0IEp/yqghK5V2VLM
-        jbG7FWV6qtw/ubTDBnpDGQgrvSNOtd0QcJsAzAtDcHwrudQgyxTZGVJqPY7gLc7P
-        5b4EFWt5E1w3+KZ+XXy4YtW5oOzVN5BvsJ85g7c0TUnmjL7p3MUUXE4049Ue/zgX
-        jtbFJ0aa1HB8bnlQdWWOeflYRNEQL8482ZCmXXATFP1l5uJA9Pr6/ltdWtQTsXUA
-        bEseUGEpmq83vAkwtZIyJRG2cJh8ZRlJ6whSMg6wr7lFvStHQQzKHt9pRPml3lLK
-        ba2X07myAEJq/lpJNXJm5bkKV0+o8hqYQZ1ndh9HblHb2EoDBNbuIlhYft1uv8Tp
-        8beaEbq8ZST082sS/NjeL7W1T9JS6w2rw4GlUFuQlbqW8FSl1VDo+Alxu0VAr4GZ
-        gZpl2DgVoL59YDEVrlB464goly2c+eY4XkNT+JdwQ9LwMr83/yAAG6EGNpjT3pZg
-        Wey7WRnNTIF7H7ISwEzvik1GrhyBkn6K1RX3uAf760ZsQdhxwHmop+krgVcC0S93
-        xFjbBFF3+53mNv7BNPPgl0iwgA9/WuPE3aoE0A8Cm+Q6asZjf8P/h7KS67rIBEKV
-        zrQtgf3aZBbW38CT4fTzyWAP138yrU7VSGhPMm5KfTLywNsmXeaR5DnZl6GGNdL1
-        fZDM+J9FIGb/50Ee77saAlUCAwEAAQ==
-        -----END PUBLIC KEY-----
+    On the master:
 
-    On the minion::
+    .. code-block:: bash
 
-        # cat /etc/salt/pki/minion/minion.pub
-        -----BEGIN PUBLIC KEY-----
-        MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA0JcA0IEp/yqghK5V2VLM
-        jbG7FWV6qtw/ubTDBnpDGQgrvSNOtd0QcJsAzAtDcHwrudQgyxTZGVJqPY7gLc7P
-        5b4EFWt5E1w3+KZ+XXy4YtW5oOzVN5BvsJ85g7c0TUnmjL7p3MUUXE4049Ue/zgX
-        jtbFJ0aa1HB8bnlQdWWOeflYRNEQL8482ZCmXXATFP1l5uJA9Pr6/ltdWtQTsXUA
-        bEseUGEpmq83vAkwtZIyJRG2cJh8ZRlJ6whSMg6wr7lFvStHQQzKHt9pRPml3lLK
-        ba2X07myAEJq/lpJNXJm5bkKV0+o8hqYQZ1ndh9HblHb2EoDBNbuIlhYft1uv8Tp
-        8beaEbq8ZST082sS/NjeL7W1T9JS6w2rw4GlUFuQlbqW8FSl1VDo+Alxu0VAr4GZ
-        gZpl2DgVoL59YDEVrlB464goly2c+eY4XkNT+JdwQ9LwMr83/yAAG6EGNpjT3pZg
-        Wey7WRnNTIF7H7ISwEzvik1GrhyBkn6K1RX3uAf760ZsQdhxwHmop+krgVcC0S93
-        xFjbBFF3+53mNv7BNPPgl0iwgA9/WuPE3aoE0A8Cm+Q6asZjf8P/h7KS67rIBEKV
-        zrQtgf3aZBbW38CT4fTzyWAP138yrU7VSGhPMm5KfTLywNsmXeaR5DnZl6GGNdL1
-        fZDM+J9FIGb/50Ee77saAlUCAwEAAQ==
-        -----END PUBLIC KEY-----
+        # salt-key -f foo.domain.com
+        Unaccepted Keys:
+        foo.domain.com:  39:f9:e4:8a:aa:74:8d:52:1a:ec:92:03:82:09:c8:f9
+
+    On the minion:
+
+    .. code-block:: bash
+
+        # salt-call key.finger --local
+        local:
+            39:f9:e4:8a:aa:74:8d:52:1a:ec:92:03:82:09:c8:f9
+
+    If they match, approve the key with ``salt-key -a foo.domain.com``.
 
 
 Sending the First Commands
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Now that the minion is connected to the master and authenticated, the master 
+Now that the minion is connected to the master and authenticated, the master
 can start to command the minion.
 
 Salt commands allow for a vast set of functions to be executed and for
@@ -291,7 +274,7 @@ targeted minions:
 
 .. code-block:: bash
 
-    salt '*' disk.percent
+    salt '*' disk.usage
 
 
 Getting to Know the Functions
@@ -357,6 +340,30 @@ addresses, etc:
 
     salt '*' network.interfaces
 
+
+Changing the Output Format
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The default output format used for most Salt commands is called the ``nested``
+outputter, but there are several other outputters that can be used to change
+the way the output is displayed. For instance, the ``pprint`` outputter can be
+used to display the return data using Python's ``pprint`` module:
+
+.. code-block:: bash
+
+    root@saltmaster:~# salt myminion grains.item pythonpath --out=pprint
+    {'myminion': {'pythonpath': ['/usr/lib64/python2.7',
+                                 '/usr/lib/python2.7/plat-linux2',
+                                 '/usr/lib64/python2.7/lib-tk',
+                                 '/usr/lib/python2.7/lib-tk',
+                                 '/usr/lib/python2.7/site-packages',
+                                 '/usr/lib/python2.7/site-packages/gst-0.10',
+                                 '/usr/lib/python2.7/site-packages/gtk-2.0']}}
+
+The full list of Salt outputters, as well as example output, can be found
+:ref:`here <all-salt.output>`.
+
+
 ``salt-call``
 ~~~~~~~~~~~~~
 
@@ -393,7 +400,7 @@ Targeting
 
 Salt allows for minions to be targeted based on a wide range of criteria.  The
 default targeting system uses globular expressions to match minions, hence if
-there are minions named ``larry1``, ``larry2``, ``curly1`` and ``curly2``, a
+there are minions named ``larry1``, ``larry2``, ``curly1``, and ``curly2``, a
 glob of ``larry*`` will match ``larry1`` and ``larry2``, and a glob of ``*1``
 will match ``larry1`` and ``curly1``.
 
@@ -438,7 +445,7 @@ the command line:
     salt '*' pkg.install vim
 
 This example passes the argument ``vim`` to the pkg.install function. Since
-many functions can accept more complex input then just a string, the arguments
+many functions can accept more complex input than just a string, the arguments
 are parsed through YAML, allowing for more complex data to be sent on the
 command line:
 
@@ -514,7 +521,7 @@ Now, to beef up the vim SLS formula, a ``vimrc`` can be added:
 .. code-block:: yaml
 
     vim:
-      pkg.installed
+      pkg.installed: []
 
     /etc/vimrc:
       file.managed:
@@ -548,10 +555,8 @@ make an nginx subdirectory and add an init.sls file:
 .. code-block:: yaml
 
     nginx:
-      pkg:
-        - installed
-      service:
-        - running
+      pkg.installed: []
+      service.running:
         - require:
           - pkg: nginx
 
@@ -633,9 +638,8 @@ Getting Deeper Into States
 Two more in-depth States tutorials exist, which delve much more deeply into States
 functionality.
 
-1. Thomas' original states tutorial, :doc:`How Do I Use Salt
-   States?</topics/tutorials/starting_states>`, covers much more to get off the
-   ground with States.
+1. :doc:`How Do I Use Salt States? </topics/tutorials/starting_states>`, covers much
+   more to get off the ground with States.
 
 2. The :doc:`States Tutorial</topics/tutorials/states_pt1>` also provides a
    fantastic introduction.

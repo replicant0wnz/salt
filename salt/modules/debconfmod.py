@@ -2,6 +2,7 @@
 '''
 Support for Debconf
 '''
+from __future__ import absolute_import
 
 # Import python libs
 import logging
@@ -27,10 +28,12 @@ def __virtual__():
     is installed.
     '''
     if __grains__['os_family'] != 'Debian':
-        return False
+        return (False, 'The debconfmod module could not be loaded: '
+                'unsupported OS family')
 
     if salt.utils.which('debconf-get-selections') is None:
-        return False
+        return (False, 'The debconfmod module could not be loaded: '
+                'debconf-utils is not installed.')
 
     return __virtualname__
 
@@ -103,7 +106,7 @@ def _set_file(path):
     '''
     cmd = 'debconf-set-selections {0}'.format(path)
 
-    __salt__['cmd.run_stdout'](cmd)
+    __salt__['cmd.run_stdout'](cmd, python_shell=False)
 
 
 def set_(package, question, type, value, *extra):
@@ -131,6 +134,42 @@ def set_(package, question, type, value, *extra):
     os.unlink(fname)
 
     return True
+
+
+def set_template(path, template, context, defaults, saltenv='base', **kwargs):
+    '''
+    Set answers to debconf questions from a template.
+
+    path
+        location of the file containing the package selections
+
+    template
+        template format
+
+    context
+        variables to add to the template environment
+
+    default
+        default values for the template environment
+
+    CLI Example:
+
+    .. code-block:: bash
+
+        salt '*' debconf.set_template salt://pathto/pkg.selections.jinja jinja None None
+
+    '''
+
+    path = __salt__['cp.get_template'](
+        path=path,
+        dest=None,
+        template=template,
+        saltenv=saltenv,
+        context=context,
+        defaults=defaults,
+        **kwargs)
+
+    return set_file(path, saltenv, **kwargs)
 
 
 def set_file(path, saltenv='base', **kwargs):

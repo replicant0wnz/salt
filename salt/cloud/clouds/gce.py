@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-# pylint: disable=C0302
 '''
 Copyright 2013 Google Inc. All Rights Reserved.
 
@@ -18,143 +17,79 @@ limitations under the License.
 Google Compute Engine Module
 ============================
 
-The Google Compute Engine module.  This module interfaces with Google Compute
-Engine.  To authenticate to GCE, you will need to create a Service Account.
+The Google Compute Engine module. This module interfaces with Google Compute
+Engine (GCE). To authenticate to GCE, you will need to create a Service Account.
+To set up Service Account Authentication, follow the :ref:`gce_setup` instructions.
 
-Setting up Service Account Authentication:
-  - Go to the Cloud Console at: https://cloud.google.com/console.
-  - Create or navigate to your desired Project.
-  - Make sure Google Compute Engine service is enabled under the Services
-    section.
-  - Go to "APIs and auth" and then the "Registered apps" section.
-  - Click the "REGISTER APP" button and give it a meaningful name.
-  - Select "Web Application" and click "Register".
-  - Select Certificate, then "Generate Certificate"
-  - Copy the Email Address for inclusion in your /etc/salt/cloud file
-    in the 'service_account_email_address' setting.
-  - Download the Private Key
-  - The key that you download is a PKCS12 key.  It needs to be converted to
-    the PEM format.
-  - Convert the key using OpenSSL (the default password is 'notasecret'):
-    C{openssl pkcs12 -in PRIVKEY.p12 -passin pass:notasecret \
-    -nodes -nocerts | openssl rsa -out ~/PRIVKEY.pem}
-  - Add the full path name of the converted private key to your
-    /etc/salt/cloud file as 'service_account_private_key' setting.
-  - Consider using a more secure location for your private key.
-
-Supported commands:
-  # Create a few instances fro profile_name in /etc/salt/cloud.profiles
-  - salt-cloud -p profile_name inst1 inst2 inst3
-  # Delete an instance
-  - salt-cloud -d inst1
-  # Look up data on an instance
-  - salt-cloud -a show_instance inst2
-  # List available locations (aka 'zones') for provider 'gce'
-  - salt-cloud --list-locations gce
-  # List available instance sizes (aka 'machine types') for provider 'gce'
-  - salt-cloud --list-sizes gce
-  # List available images for provider 'gce'
-  - salt-cloud --list-images gce
-  # Create a persistent disk
-  - salt-cloud -f create_disk gce disk_name=pd location=us-central1-b ima...
-  # Permanently delete a persistent disk
-  - salt-cloud -f delete_disk gce disk_name=pd
-  # Attach an existing disk to an existing instance
-  - salt-cloud -a attach_disk myinstance disk_name=mydisk mode=READ_ONLY
-  # Detach a disk from an instance
-  - salt-cloud -a detach_disk myinstance disk_name=mydisk
-  # Show information about the named disk
-  - salt-cloud -a show_disk myinstance disk_name=pd
-  - salt-cloud -f show_disk gce disk_name=pd
-  # Create a snapshot of a persistent disk
-  - salt-cloud -f create_snapshot gce name=snap-1 disk_name=pd
-  # Permanently delete a disk snapshot
-  - salt-cloud -f delete_snapshot gce name=snap-1
-  # Show information about the named snapshot
-  - salt-cloud -f show_snapshot gce name=snap-1
-  # Create a network
-  - salt-cloud -f create_network gce name=mynet cidr=10.10.10.0/24
-  # Delete a network
-  - salt-cloud -f delete_network gce name=mynet
-  # Show info for a network
-  - salt-cloud -f show_network gce name=mynet
-  # Create a firewall rule
-  - salt-cloud -f create_fwrule gce name=fw1 network=mynet allow=tcp:80
-  # Delete a firewall rule
-  - salt-cloud -f delete_fwrule gce name=fw1
-  # Show info for a firewall rule
-  -salt-cloud -f show_fwrule gce name=fw1
-  # Create a load-balancer HTTP health check
-  - salt-cloud -f create_hc gce name=hc path=/ port=80
-  # Delete a load-balancer HTTP health check
-  - salt-cloud -f delete_hc gce name=hc
-  # Show info about an HTTP health check
-  - salt-cloud -f show_hc gce name=hc
-  # Create a load-balancer configuration
-  - salt-cloud -f create_lb gce name=lb region=us-central1 ports=80 ...
-  # Delete a load-balancer configuration
-  - salt-cloud -f delete_lb gce name=lb
-  # Show details about load-balancer
-  - salt-cloud -f show_lb gce name=lb
-  # Add member to load-balancer
-  - salt-cloud -f attach_lb gce name=lb member=www1
-  # Remove member from load-balancer
-  - salt-cloud -f detach_lb gce name=lb member=www1
+Example Provider Configuration
+------------------------------
 
 .. code-block:: yaml
 
     my-gce-config:
       # The Google Cloud Platform Project ID
-      project: google.com:erjohnso
+      project: "my-project-id"
       # The Service ACcount client ID
       service_account_email_address: 1234567890@developer.gserviceaccount.com
       # The location of the private key (PEM format)
       service_account_private_key: /home/erjohnso/PRIVKEY.pem
-      provider: gce
+      driver: gce
+      # Specify whether to use public or private IP for deploy script.
+      # Valid options are:
+      #     private_ips - The salt-master is also hosted with GCE
+      #     public_ips - The salt-master is hosted outside of GCE
+      ssh_interface: public_ips
 
 :maintainer: Eric Johnson <erjohnso@google.com>
-:maturity: new
 :depends: libcloud >= 0.14.1
-:depends: pycrypto >= 2.1
 '''
-# custom UA
-_UA_PRODUCT = 'salt-cloud'
-_UA_VERSION = '0.2.0'
-
-# The import section is mostly libcloud boilerplate
-from libcloud.compute.types import Provider
-from libcloud.compute.providers import get_driver
-from libcloud.loadbalancer.types import Provider as Provider_lb
-from libcloud.loadbalancer.providers import get_driver as get_driver_lb
-from libcloud.common.google import (
-    ResourceInUseError,
-    ResourceNotFoundError,
-    )
+# pylint: disable=invalid-name,function-redefined
 
 # Import python libs
-import copy
+from __future__ import absolute_import
+import os
+import re
 import pprint
 import logging
-import os
-import stat
+import msgpack
 from ast import literal_eval
+
+# Import 3rd-party libs
+# pylint: disable=import-error
+try:
+    from libcloud.compute.types import Provider
+    from libcloud.compute.providers import get_driver
+    from libcloud.loadbalancer.types import Provider as Provider_lb
+    from libcloud.loadbalancer.providers import get_driver as get_driver_lb
+    from libcloud.common.google import (
+        ResourceInUseError,
+        ResourceNotFoundError,
+        )
+    HAS_LIBCLOUD = True
+except ImportError:
+    HAS_LIBCLOUD = False
+# pylint: enable=import-error
 
 # Import salt libs
 from salt.utils import namespaced_function
-
-# Import saltcloud libs
+import salt.ext.six as six
 import salt.utils.cloud
 import salt.config as config
-from salt.cloud.libcloudfuncs import *  # pylint: disable=W0401,W0614
-from salt.cloud.exceptions import (
-    SaltCloudException,
+from salt.utils import http
+from salt import syspaths
+from salt.cloud.libcloudfuncs import *  # pylint: disable=redefined-builtin,wildcard-import,unused-wildcard-import
+from salt.exceptions import (
     SaltCloudSystemExit,
 )
 
-
-# pylint: disable=C0103,E0602,E0102
 # Get logging started
 log = logging.getLogger(__name__)
+
+__virtualname__ = 'gce'
+
+# custom UA
+_UA_PRODUCT = 'salt-cloud'
+_UA_VERSION = '0.2.0'
 
 # Redirect GCE functions to this module namespace
 avail_locations = namespaced_function(avail_locations, globals())
@@ -164,6 +99,8 @@ list_nodes = namespaced_function(list_nodes, globals())
 list_nodes_full = namespaced_function(list_nodes_full, globals())
 list_nodes_select = namespaced_function(list_nodes_select, globals())
 
+GCE_VM_NAME_REGEX = re.compile(r'^(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?)$')
+
 
 # Only load in this module if the GCE configurations are in place
 def __virtual__():
@@ -171,38 +108,23 @@ def __virtual__():
     Set up the libcloud functions and check for GCE configurations.
     '''
     if get_configured_provider() is False:
-        log.debug(
-            'There is no GCE cloud provider configuration available. Not '
-            'loading module.'
-        )
         return False
 
-    for provider, details in __opts__['providers'].iteritems():
-        if 'provider' not in details or details['provider'] != 'gce':
+    if get_dependencies() is False:
+        return False
+
+    for provider, details in six.iteritems(__opts__['providers']):
+        if 'gce' not in details:
             continue
 
-        pathname = os.path.expanduser(details['service_account_private_key'])
-        if not os.path.exists(pathname):
-            raise SaltCloudException(
-                'The GCE service account private key {0!r} used in '
-                'the {0!r} provider configuration does not exist\n'.format(
-                    details['service_account_private_key'], provider
-                )
-            )
-        keymode = str(
-            oct(stat.S_IMODE(os.stat(pathname).st_mode))
-        )
-        if keymode not in ('0400', '0600'):
-            raise SaltCloudException(
-                'The GCE service account private key {0!r} used in '
-                'the {0!r} provider configuration needs to be set to '
-                'mode 0400 or 0600\n'.format(
-                    details['service_account_private_key'], provider
-                )
-            )
+        parameters = details['gce']
+        pathname = os.path.expanduser(parameters['service_account_private_key'])
+        if salt.utils.cloud.check_key_path_and_mode(
+                provider, pathname
+        ) is False:
+            return False
 
-    log.debug('Loading GCE cloud module')
-    return True
+    return __virtualname__
 
 
 def get_configured_provider():
@@ -215,6 +137,16 @@ def get_configured_provider():
         ('project',
          'service_account_email_address',
          'service_account_private_key')
+    )
+
+
+def get_dependencies():
+    '''
+    Warn if dependencies aren't met.
+    '''
+    return config.check_driver_dependencies(
+        __virtualname__,
+        {'libcloud': HAS_LIBCLOUD}
     )
 
 
@@ -283,6 +215,16 @@ def _expand_disk(disk):
     return ret
 
 
+def _expand_address(addy):
+    '''
+    Convert the libcloud GCEAddress object into something more serializable.
+    '''
+    ret = {}
+    ret.update(addy.__dict__)
+    ret['extra']['zone'] = addy.region.name
+    return ret
+
+
 def _expand_balancer(lb):
     '''
     Convert the libcloud load-balancer object into something more serializable.
@@ -332,7 +274,9 @@ def show_instance(vm_name, call=None):
             'The show_instance action must be called with -a or --action.'
         )
     conn = get_conn()
-    return _expand_node(conn.ex_get_node(vm_name))
+    node = _expand_node(conn.ex_get_node(vm_name))
+    salt.utils.cloud.cache_node(node, __active_provider_name__, __opts__)
+    return node
 
 
 def avail_sizes(conn=None):
@@ -357,21 +301,34 @@ def avail_sizes(conn=None):
 def avail_images(conn=None):
     '''
     Return a dict of all available VM images on the cloud provider with
-    relevant data
+    relevant data.
 
     Note that for GCE, there are custom images within the project, but the
     generic images are in other projects.  This returns a dict of images in
-    the project plus images in 'debian-cloud' and 'centos-cloud' (If there is
-    overlap in names, the one in the current project is used.)
+    the project plus images in well-known public projects that provide supported
+    images, as listed on this page:
+    https://cloud.google.com/compute/docs/operating-systems/
+
+    If image names overlap, the image in the current project is used.
     '''
     if not conn:
         conn = get_conn()
 
-    project_images = conn.list_images()
-    debian_images = conn.list_images('debian-cloud')
-    centos_images = conn.list_images('centos-cloud')
+    all_images = []
+    # The list of public image projects can be found via:
+    #   % gcloud compute images list
+    # and looking at the "PROJECT" column in the output.
+    public_image_projects = (
+        'centos-cloud', 'coreos-cloud', 'debian-cloud', 'google-containers',
+        'opensuse-cloud', 'rhel-cloud', 'suse-cloud', 'ubuntu-os-cloud',
+        'windows-cloud'
+    )
+    for project in public_image_projects:
+        all_images.extend(conn.list_images(project))
 
-    all_images = debian_images + centos_images + project_images
+    # Finally, add the images in this current project last so that it overrides
+    # any image that also exists in any public project.
+    all_images.extend(conn.list_images())
 
     ret = {}
     for img in all_images:
@@ -450,20 +407,26 @@ def __get_metadata(vm_):
     else:
         metadata['salt-cloud-profile'] = vm_['profile']
         items = []
-        for k, v in metadata.items():
+        for k, v in six.iteritems(metadata):
             items.append({'key': k, 'value': v})
         metadata = {'items': items}
     return metadata
 
 
-def __get_host(node):
+def __get_host(node, vm_):
     '''
     Return public IP, private IP, or hostname for the libcloud 'node' object
     '''
-    if len(node.public_ips) > 0:
-        return node.public_ips[0]
-    if len(node.private_ips) > 0:
-        return node.private_ips[0]
+    if __get_ssh_interface(vm_) == 'private_ips' or vm_['external_ip'] is None:
+        ip_address = node.private_ips[0]
+        log.info('Salt node data. Private_ip: {0}'.format(ip_address))
+    else:
+        ip_address = node.public_ips[0]
+        log.info('Salt node data. Public_ip: {0}'.format(ip_address))
+
+    if len(ip_address) > 0:
+        return ip_address
+
     return node.name
 
 
@@ -475,6 +438,35 @@ def __get_network(conn, vm_):
         'network', vm_, __opts__,
         default='default', search_global=False)
     return conn.ex_get_network(network)
+
+
+def __get_ssh_interface(vm_):
+    '''
+    Return the ssh_interface type to connect to. Either 'public_ips' (default)
+    or 'private_ips'.
+    '''
+    return config.get_cloud_config_value(
+        'ssh_interface', vm_, __opts__, default='public_ips',
+        search_global=False
+    )
+
+
+def __create_orget_address(conn, name, region):
+    '''
+    Reuse or create a static IP address.
+    Returns a native GCEAddress construct to use with libcloud.
+    '''
+    try:
+        addy = conn.ex_get_address(name, region)
+    except ResourceNotFoundError:  # pylint: disable=W0703
+        addr_kwargs = {
+            'name': name,
+            'region': region
+        }
+        new_addy = create_address(addr_kwargs, "function")
+        addy = conn.ex_get_address(new_addy['name'], new_addy['region'])
+
+    return addy
 
 
 def _parse_allow(allow):
@@ -522,7 +514,7 @@ def __get_ssh_credentials(vm_):
         'ssh_username', vm_, __opts__, default=os.getenv('USER'))
     ssh_key = config.get_cloud_config_value(
         'ssh_keyfile', vm_, __opts__,
-        default=os.getenv('HOME') + '/.ssh/google_compute_engine')
+        default=os.path.expanduser('~/.ssh/google_compute_engine'))
     return ssh_user, ssh_key
 
 
@@ -530,7 +522,9 @@ def create_network(kwargs=None, call=None):
     '''
     Create a GCE network.
 
-    CLI Example::
+    CLI Example:
+
+    .. code-block:: bash
 
         salt-cloud -f create_network gce name=mynet cidr=10.10.10.0/24
     '''
@@ -548,7 +542,7 @@ def create_network(kwargs=None, call=None):
         log.error(
             'A network CIDR range must be specified when creating a network.'
         )
-        return False
+        return
 
     name = kwargs['name']
     cidr = kwargs['cidr']
@@ -562,6 +556,7 @@ def create_network(kwargs=None, call=None):
             'name': name,
             'cidr': cidr,
         },
+        transport=__opts__['transport']
     )
 
     network = conn.ex_create_network(name, cidr)
@@ -574,6 +569,7 @@ def create_network(kwargs=None, call=None):
             'name': name,
             'cidr': cidr,
         },
+        transport=__opts__['transport']
     )
     return _expand_item(network)
 
@@ -582,7 +578,9 @@ def delete_network(kwargs=None, call=None):
     '''
     Permanently delete a network.
 
-    CLI Example::
+    CLI Example:
+
+    .. code-block:: bash
 
         salt-cloud -f delete_network gce name=mynet
     '''
@@ -607,6 +605,7 @@ def delete_network(kwargs=None, call=None):
         {
             'name': name,
         },
+        transport=__opts__['transport']
     )
 
     try:
@@ -618,7 +617,7 @@ def delete_network(kwargs=None, call=None):
             'Nework {0} could not be found.\n'
             'The following exception was thrown by libcloud:\n{1}'.format(
                 name, exc),
-            exc_info=log.isEnabledFor(logging.DEBUG)
+            exc_info_on_loglevel=logging.DEBUG
         )
         return False
 
@@ -629,6 +628,7 @@ def delete_network(kwargs=None, call=None):
         {
             'name': name,
         },
+        transport=__opts__['transport']
     )
     return result
 
@@ -637,7 +637,9 @@ def show_network(kwargs=None, call=None):
     '''
     Show the details of an existing network.
 
-    CLI Example::
+    CLI Example:
+
+    .. code-block:: bash
 
         salt-cloud -f show_network gce name=mynet
     '''
@@ -659,7 +661,9 @@ def create_fwrule(kwargs=None, call=None):
     '''
     Create a GCE firewall rule. The 'default' network is used if not specified.
 
-    CLI Example::
+    CLI Example:
+
+    .. code-block:: bash
 
         salt-cloud -f create_fwrule gce name=allow-http allow=tcp:80
     '''
@@ -684,12 +688,14 @@ def create_fwrule(kwargs=None, call=None):
     allow = _parse_allow(kwargs['allow'])
     src_range = kwargs.get('src_range', '0.0.0.0/0')
     src_tags = kwargs.get('src_tags', None)
+    dst_tags = kwargs.get('dst_tags', None)
 
     if src_range:
         src_range = src_range.split(',')
     if src_tags:
         src_tags = src_tags.split(',')
-
+    if dst_tags:
+        dst_tags = dst_tags.split(',')
     conn = get_conn()
 
     salt.utils.cloud.fire_event(
@@ -701,13 +707,15 @@ def create_fwrule(kwargs=None, call=None):
             'network': network_name,
             'allow': kwargs['allow'],
         },
+        transport=__opts__['transport']
     )
 
     fwrule = conn.ex_create_firewall(
         name, allow,
         network=network_name,
         source_ranges=src_range,
-        source_tags=src_tags
+        source_tags=src_tags,
+        target_tags=dst_tags
     )
 
     salt.utils.cloud.fire_event(
@@ -719,6 +727,7 @@ def create_fwrule(kwargs=None, call=None):
             'network': network_name,
             'allow': kwargs['allow'],
         },
+        transport=__opts__['transport']
     )
     return _expand_item(fwrule)
 
@@ -727,7 +736,9 @@ def delete_fwrule(kwargs=None, call=None):
     '''
     Permanently delete a firewall rule.
 
-    CLI Example::
+    CLI Example:
+
+    .. code-block:: bash
 
         salt-cloud -f delete_fwrule gce name=allow-http
     '''
@@ -752,6 +763,7 @@ def delete_fwrule(kwargs=None, call=None):
         {
             'name': name,
         },
+        transport=__opts__['transport']
     )
 
     try:
@@ -763,7 +775,7 @@ def delete_fwrule(kwargs=None, call=None):
             'Rule {0} could not be found.\n'
             'The following exception was thrown by libcloud:\n{1}'.format(
                 name, exc),
-            exc_info=log.isEnabledFor(logging.DEBUG)
+            exc_info_on_loglevel=logging.DEBUG
         )
         return False
 
@@ -774,6 +786,7 @@ def delete_fwrule(kwargs=None, call=None):
         {
             'name': name,
         },
+        transport=__opts__['transport']
     )
     return result
 
@@ -782,7 +795,9 @@ def show_fwrule(kwargs=None, call=None):
     '''
     Show the details of an existing firewall rule.
 
-    CLI Example::
+    CLI Example:
+
+    .. code-block:: bash
 
         salt-cloud -f show_fwrule gce name=allow-http
     '''
@@ -804,7 +819,9 @@ def create_hc(kwargs=None, call=None):
     '''
     Create an HTTP health check configuration.
 
-    CLI Example::
+    CLI Example:
+
+    .. code-block:: bash
 
         salt-cloud -f create_hc gce name=hc path=/healthy port=80
     '''
@@ -844,6 +861,7 @@ def create_hc(kwargs=None, call=None):
             'unhealthy_threshold': unhealthy_threshold,
             'healthy_threshold': healthy_threshold,
         },
+        transport=__opts__['transport']
     )
 
     hc = conn.ex_create_healthcheck(
@@ -855,7 +873,7 @@ def create_hc(kwargs=None, call=None):
     salt.utils.cloud.fire_event(
         'event',
         'created health_check',
-        'salt/cloud/healthcheck/created'.format(name),
+        'salt/cloud/healthcheck/created',
         {
             'name': name,
             'host': host,
@@ -866,6 +884,7 @@ def create_hc(kwargs=None, call=None):
             'unhealthy_threshold': unhealthy_threshold,
             'healthy_threshold': healthy_threshold,
         },
+        transport=__opts__['transport']
     )
     return _expand_item(hc)
 
@@ -874,7 +893,9 @@ def delete_hc(kwargs=None, call=None):
     '''
     Permanently delete a health check.
 
-    CLI Example::
+    CLI Example:
+
+    .. code-block:: bash
 
         salt-cloud -f delete_hc gce name=hc
     '''
@@ -899,6 +920,7 @@ def delete_hc(kwargs=None, call=None):
         {
             'name': name,
         },
+        transport=__opts__['transport']
     )
 
     try:
@@ -910,7 +932,7 @@ def delete_hc(kwargs=None, call=None):
             'Health check {0} could not be found.\n'
             'The following exception was thrown by libcloud:\n{1}'.format(
                 name, exc),
-            exc_info=log.isEnabledFor(logging.DEBUG)
+            exc_info_on_loglevel=logging.DEBUG
         )
         return False
 
@@ -921,6 +943,7 @@ def delete_hc(kwargs=None, call=None):
         {
             'name': name,
         },
+        transport=__opts__['transport']
     )
     return result
 
@@ -929,7 +952,9 @@ def show_hc(kwargs=None, call=None):
     '''
     Show the details of an existing health check.
 
-    CLI Example::
+    CLI Example:
+
+    .. code-block:: bash
 
         salt-cloud -f show_hc gce name=hc
     '''
@@ -947,11 +972,168 @@ def show_hc(kwargs=None, call=None):
     return _expand_item(conn.ex_get_healthcheck(kwargs['name']))
 
 
+def create_address(kwargs=None, call=None):
+    '''
+    Create a static address in a region.
+
+    CLI Example:
+
+    .. code-block:: bash
+
+        salt-cloud -f create_address gce name=my-ip region=us-central1 address=IP
+    '''
+    if call != 'function':
+        raise SaltCloudSystemExit(
+            'The create_address function must be called with -f or --function.'
+        )
+
+    if not kwargs or 'name' not in kwargs:
+        log.error(
+            'A name must be specified when creating an address.'
+        )
+        return False
+    if 'region' not in kwargs:
+        log.error(
+            'A region must be specified for the address.'
+        )
+        return False
+
+    name = kwargs['name']
+    ex_region = kwargs['region']
+    ex_address = kwargs.get("address", None)
+
+    conn = get_conn()
+
+    salt.utils.cloud.fire_event(
+        'event',
+        'create address',
+        'salt/cloud/address/creating',
+        kwargs,
+        transport=__opts__['transport']
+    )
+
+    addy = conn.ex_create_address(name, ex_region, ex_address)
+
+    salt.utils.cloud.fire_event(
+        'event',
+        'created address',
+        'salt/cloud/address/created',
+        kwargs,
+        transport=__opts__['transport']
+    )
+
+    log.info('Created GCE Address '+name)
+
+    return _expand_address(addy)
+
+
+def delete_address(kwargs=None, call=None):
+    '''
+    Permanently delete a static address.
+
+    CLI Example:
+
+    .. code-block:: bash
+
+        salt-cloud -f delete_address gce name=my-ip
+    '''
+    if call != 'function':
+        raise SaltCloudSystemExit(
+            'The delete_address function must be called with -f or --function.'
+        )
+
+    if not kwargs or 'name' not in kwargs:
+        log.error(
+            'A name must be specified when deleting an address.'
+        )
+        return False
+
+    if not kwargs or 'region' not in kwargs:
+        log.error(
+            'A region must be specified when deleting an address.'
+        )
+        return False
+
+    name = kwargs['name']
+    ex_region = kwargs['region']
+
+    conn = get_conn()
+
+    salt.utils.cloud.fire_event(
+        'event',
+        'delete address',
+        'salt/cloud/address/deleting',
+        {
+            'name': name,
+        },
+        transport=__opts__['transport']
+    )
+
+    try:
+        result = conn.ex_destroy_address(
+            conn.ex_get_address(name, ex_region)
+        )
+    except ResourceNotFoundError as exc:
+        log.error(
+            'Address {0} could not be found (region {1})\n'
+            'The following exception was thrown by libcloud:\n{2}'.format(
+                name, ex_region, exc),
+            exc_info_on_loglevel=logging.DEBUG
+        )
+        return False
+
+    salt.utils.cloud.fire_event(
+        'event',
+        'deleted address',
+        'salt/cloud/address/deleted',
+        {
+            'name': name,
+        },
+        transport=__opts__['transport']
+    )
+
+    log.info('Deleted GCE Address ' + name)
+
+    return result
+
+
+def show_address(kwargs=None, call=None):
+    '''
+    Show the details of an existing static address.
+
+    CLI Example:
+
+    .. code-block:: bash
+
+        salt-cloud -f show_address gce name=mysnapshot region=us-central1
+    '''
+    if call != 'function':
+        raise SaltCloudSystemExit(
+            'The show_snapshot function must be called with -f or --function.'
+        )
+    if not kwargs or 'name' not in kwargs:
+        log.error(
+            'Must specify name.'
+        )
+        return False
+
+    if not kwargs or 'region' not in kwargs:
+        log.error(
+            'Must specify region.'
+        )
+        return False
+
+    conn = get_conn()
+    return _expand_address(conn.ex_get_address(kwargs['name'], kwargs['region']))
+
+
 def create_lb(kwargs=None, call=None):
     '''
     Create a load-balancer configuration.
 
-    CLI Example::
+    CLI Example:
+
+    .. code-block:: bash
 
         salt-cloud -f create_lb gce name=lb region=us-central1 ports=80
     '''
@@ -989,20 +1171,25 @@ def create_lb(kwargs=None, call=None):
     protocol = kwargs.get('protocol', 'tcp')
     algorithm = kwargs.get('algorithm', None)
     ex_healthchecks = kwargs.get('healthchecks', None)
+
     # pylint: disable=W0511
-    # TODO(erjohnso): need to support GCEAddress, but that requires adding
-    #                 salt functions to create/destroy/show address...
-    ex_address = None
+
+    conn = get_conn()
+    lb_conn = get_lb_conn(conn)
+
+    ex_address = kwargs.get('address', None)
+    if ex_address is not None:
+        ex_address = __create_orget_address(conn, ex_address, ex_region)
+
     if ex_healthchecks:
         ex_healthchecks = ex_healthchecks.split(',')
-
-    lb_conn = get_lb_conn(get_conn())
 
     salt.utils.cloud.fire_event(
         'event',
         'create load_balancer',
         'salt/cloud/loadbalancer/creating',
         kwargs,
+        transport=__opts__['transport']
     )
 
     lb = lb_conn.create_balancer(
@@ -1016,6 +1203,7 @@ def create_lb(kwargs=None, call=None):
         'created load_balancer',
         'salt/cloud/loadbalancer/created',
         kwargs,
+        transport=__opts__['transport']
     )
     return _expand_balancer(lb)
 
@@ -1024,7 +1212,9 @@ def delete_lb(kwargs=None, call=None):
     '''
     Permanently delete a load-balancer.
 
-    CLI Example::
+    CLI Example:
+
+    .. code-block:: bash
 
         salt-cloud -f delete_lb gce name=lb
     '''
@@ -1049,6 +1239,7 @@ def delete_lb(kwargs=None, call=None):
         {
             'name': name,
         },
+        transport=__opts__['transport']
     )
 
     try:
@@ -1060,7 +1251,7 @@ def delete_lb(kwargs=None, call=None):
             'Load balancer {0} could not be found.\n'
             'The following exception was thrown by libcloud:\n{1}'.format(
                 name, exc),
-            exc_info=log.isEnabledFor(logging.DEBUG)
+            exc_info_on_loglevel=logging.DEBUG
         )
         return False
 
@@ -1071,6 +1262,7 @@ def delete_lb(kwargs=None, call=None):
         {
             'name': name,
         },
+        transport=__opts__['transport']
     )
     return result
 
@@ -1079,7 +1271,9 @@ def show_lb(kwargs=None, call=None):
     '''
     Show the details of an existing load-balancer.
 
-    CLI Example::
+    CLI Example:
+
+    .. code-block:: bash
 
         salt-cloud -f show_lb gce name=lb
     '''
@@ -1101,7 +1295,9 @@ def attach_lb(kwargs=None, call=None):
     '''
     Add an existing node/member to an existing load-balancer configuration.
 
-    CLI Example::
+    CLI Example:
+
+    .. code-block:: bash
 
         salt-cloud -f attach_lb gce name=lb member=myinstance
     '''
@@ -1132,6 +1328,7 @@ def attach_lb(kwargs=None, call=None):
         'attach load_balancer',
         'salt/cloud/loadbalancer/attaching',
         kwargs,
+        transport=__opts__['transport']
     )
 
     result = lb_conn.balancer_attach_compute_node(lb, node)
@@ -1141,6 +1338,7 @@ def attach_lb(kwargs=None, call=None):
         'attached load_balancer',
         'salt/cloud/loadbalancer/attached',
         kwargs,
+        transport=__opts__['transport']
     )
     return _expand_item(result)
 
@@ -1149,7 +1347,9 @@ def detach_lb(kwargs=None, call=None):
     '''
     Remove an existing node/member from an existing load-balancer configuration.
 
-    CLI Example::
+    CLI Example:
+
+    .. code-block:: bash
 
         salt-cloud -f detach_lb gce name=lb member=myinstance
     '''
@@ -1193,6 +1393,7 @@ def detach_lb(kwargs=None, call=None):
         'detach load_balancer',
         'salt/cloud/loadbalancer/detaching',
         kwargs,
+        transport=__opts__['transport']
     )
 
     result = lb_conn.balancer_detach_member(lb, remove_member)
@@ -1202,6 +1403,7 @@ def detach_lb(kwargs=None, call=None):
         'detached load_balancer',
         'salt/cloud/loadbalancer/detached',
         kwargs,
+        transport=__opts__['transport']
     )
     return result
 
@@ -1210,7 +1412,9 @@ def delete_snapshot(kwargs=None, call=None):
     '''
     Permanently delete a disk snapshot.
 
-    CLI Example::
+    CLI Example:
+
+    .. code-block:: bash
 
         salt-cloud -f delete_snapshot gce name=disk-snap-1
     '''
@@ -1235,6 +1439,7 @@ def delete_snapshot(kwargs=None, call=None):
         {
             'name': name,
         },
+        transport=__opts__['transport']
     )
 
     try:
@@ -1246,7 +1451,7 @@ def delete_snapshot(kwargs=None, call=None):
             'Snapshot {0} could not be found.\n'
             'The following exception was thrown by libcloud:\n{1}'.format(
                 name, exc),
-            exc_info=log.isEnabledFor(logging.DEBUG)
+            exc_info_on_loglevel=logging.DEBUG
         )
         return False
 
@@ -1257,6 +1462,7 @@ def delete_snapshot(kwargs=None, call=None):
         {
             'name': name,
         },
+        transport=__opts__['transport']
     )
     return result
 
@@ -1265,7 +1471,9 @@ def delete_disk(kwargs=None, call=None):
     '''
     Permanently delete a persistent disk.
 
-    CLI Example::
+    CLI Example:
+
+    .. code-block:: bash
 
         salt-cloud -f delete_disk gce disk_name=pd
     '''
@@ -1293,6 +1501,7 @@ def delete_disk(kwargs=None, call=None):
             'location': disk.extra['zone'].name,
             'size': disk.size,
         },
+        transport=__opts__['transport']
     )
 
     try:
@@ -1302,7 +1511,7 @@ def delete_disk(kwargs=None, call=None):
             'Disk {0} is in use and must be detached before deleting.\n'
             'The following exception was thrown by libcloud:\n{1}'.format(
                 disk.name, exc),
-            exc_info=log.isEnabledFor(logging.DEBUG)
+            exc_info_on_loglevel=logging.DEBUG
         )
         return False
 
@@ -1315,17 +1524,21 @@ def delete_disk(kwargs=None, call=None):
             'location': disk.extra['zone'].name,
             'size': disk.size,
         },
+        transport=__opts__['transport']
     )
     return result
 
 
 def create_disk(kwargs=None, call=None):
+
     '''
     Create a new persistent disk. Must specify `disk_name` and `location`.
     Can also specify an `image` or `snapshot` but if neither of those are
     specified, a `size` (in GB) is required.
 
-    CLI Example::
+    CLI Example:
+
+    .. code-block:: bash
 
         salt-cloud -f create_disk gce disk_name=pd size=300 location=us-central1-b
     '''
@@ -1334,32 +1547,36 @@ def create_disk(kwargs=None, call=None):
             'The create_disk function must be called with -f or --function.'
         )
 
-    if not kwargs or 'location' not in kwargs:
+    if kwargs is None:
+        kwargs = {}
+
+    name = kwargs.get('disk_name', None)
+    image = kwargs.get('image', None)
+    location = kwargs.get('location', None)
+    size = kwargs.get('size', None)
+    snapshot = kwargs.get('snapshot', None)
+
+    if location is None:
         log.error(
             'A location (zone) must be specified when creating a disk.'
         )
         return False
 
-    if 'disk_name' not in kwargs:
+    if name is None:
         log.error(
             'A disk_name must be specified when creating a disk.'
         )
         return False
 
-    if 'size' not in kwargs:
-        if 'image' not in kwargs and 'snapshot' not in kwargs:
-            log.error(
-                'Must specify image, snapshot, or size.'
-            )
-            return False
+    if 'size' is None and 'image' is None and 'snapshot' is None:
+        log.error(
+            'Must specify image, snapshot, or size.'
+        )
+        return False
 
     conn = get_conn()
 
-    size = kwargs.get('size', None)
-    name = kwargs.get('disk_name')
     location = conn.ex_get_zone(kwargs['location'])
-    snapshot = kwargs.get('snapshot', None)
-    image = kwargs.get('image', None)
     use_existing = True
 
     salt.utils.cloud.fire_event(
@@ -1372,6 +1589,7 @@ def create_disk(kwargs=None, call=None):
             'image': image,
             'snapshot': snapshot,
         },
+        transport=__opts__['transport']
     )
 
     disk = conn.create_volume(
@@ -1388,6 +1606,7 @@ def create_disk(kwargs=None, call=None):
             'image': image,
             'snapshot': snapshot,
         },
+        transport=__opts__['transport']
     )
     return _expand_disk(disk)
 
@@ -1396,7 +1615,9 @@ def create_snapshot(kwargs=None, call=None):
     '''
     Create a new disk snapshot. Must specify `name` and  `disk_name`.
 
-    CLI Example::
+    CLI Example:
+
+    .. code-block:: bash
 
         salt-cloud -f create_snapshot gce name=snap1 disk_name=pd
     '''
@@ -1429,7 +1650,7 @@ def create_snapshot(kwargs=None, call=None):
             'Disk {0} could not be found.\n'
             'The following exception was thrown by libcloud:\n{1}'.format(
                 disk_name, exc),
-            exc_info=log.isEnabledFor(logging.DEBUG)
+            exc_info_on_loglevel=logging.DEBUG
         )
         return False
 
@@ -1441,6 +1662,7 @@ def create_snapshot(kwargs=None, call=None):
             'name': name,
             'disk_name': disk_name,
         },
+        transport=__opts__['transport']
     )
 
     snapshot = conn.create_volume_snapshot(disk, name)
@@ -1453,6 +1675,7 @@ def create_snapshot(kwargs=None, call=None):
             'name': name,
             'disk_name': disk_name,
         },
+        transport=__opts__['transport']
     )
     return _expand_item(snapshot)
 
@@ -1461,7 +1684,9 @@ def show_disk(name=None, kwargs=None, call=None):  # pylint: disable=W0613
     '''
     Show the details of an existing disk.
 
-    CLI Example::
+    CLI Example:
+
+    .. code-block:: bash
 
         salt-cloud -a show_disk myinstance disk_name=mydisk
         salt-cloud -f show_disk gce disk_name=mydisk
@@ -1480,7 +1705,9 @@ def show_snapshot(kwargs=None, call=None):
     '''
     Show the details of an existing snapshot.
 
-    CLI Example::
+    CLI Example:
+
+    .. code-block:: bash
 
         salt-cloud -f show_snapshot gce name=mysnapshot
     '''
@@ -1502,7 +1729,9 @@ def detach_disk(name=None, kwargs=None, call=None):
     '''
     Detach a disk from an instance.
 
-    CLI Example::
+    CLI Example:
+
+    .. code-block:: bash
 
         salt-cloud -a detach_disk myinstance disk_name=mydisk
     '''
@@ -1537,6 +1766,7 @@ def detach_disk(name=None, kwargs=None, call=None):
             'name': node_name,
             'disk_name': disk_name,
         },
+        transport=__opts__['transport']
     )
 
     result = conn.detach_volume(disk, node)
@@ -1549,6 +1779,7 @@ def detach_disk(name=None, kwargs=None, call=None):
             'name': node_name,
             'disk_name': disk_name,
         },
+        transport=__opts__['transport']
     )
     return result
 
@@ -1557,7 +1788,9 @@ def attach_disk(name=None, kwargs=None, call=None):
     '''
     Attach an existing disk to an existing instance.
 
-    CLI Example::
+    CLI Example:
+
+    .. code-block:: bash
 
         salt-cloud -a attach_disk myinstance disk_name=mydisk mode=READ_WRITE
     '''
@@ -1606,6 +1839,7 @@ def attach_disk(name=None, kwargs=None, call=None):
             'mode': mode,
             'boot': boot,
         },
+        transport=__opts__['transport']
     )
 
     result = conn.attach_volume(node, disk, ex_mode=mode, ex_boot=boot)
@@ -1620,6 +1854,7 @@ def attach_disk(name=None, kwargs=None, call=None):
             'mode': mode,
             'boot': boot,
         },
+        transport=__opts__['transport']
     )
     return result
 
@@ -1628,7 +1863,9 @@ def reboot(vm_name, call=None):
     '''
     Call GCE 'reset' on the instance.
 
-    CLI Example::
+    CLI Example:
+
+    .. code-block:: bash
 
         salt-cloud -a reboot myinstance
     '''
@@ -1646,7 +1883,9 @@ def destroy(vm_name, call=None):
     '''
     Call 'destroy' on the instance.  Can be called with "-a destroy" or -d
 
-    CLI Example::
+    CLI Example:
+
+    .. code-block:: bash
 
         salt-cloud -a destroy myinstance1 myinstance2 ...
         salt-cloud -d myinstance1 myinstance2 ...
@@ -1667,7 +1906,7 @@ def destroy(vm_name, call=None):
             'run the initial deployment: \n{1}'.format(
                 vm_name, exc
             ),
-            exc_info=log.isEnabledFor(logging.DEBUG)
+            exc_info_on_loglevel=logging.DEBUG
         )
         raise SaltCloudSystemExit(
             'Could not find instance {0}.'.format(vm_name)
@@ -1678,9 +1917,10 @@ def destroy(vm_name, call=None):
         'delete instance',
         'salt/cloud/{0}/deleting'.format(vm_name),
         {'name': vm_name},
+        transport=__opts__['transport']
     )
 
-    # Use the instance metadata to see if it's salt cloud profile was
+    # Use the instance metadata to see if its salt cloud profile was
     # preserved during instance create.  If so, use the profile value
     # to see if the 'delete_boot_pd' value is set to delete the disk
     # along with the instance.
@@ -1691,9 +1931,9 @@ def destroy(vm_name, call=None):
                 profile = md['value']
     vm_ = get_configured_provider()
     delete_boot_pd = False
-    if profile is not None and profile in vm_['profiles']:
-        if 'delete_boot_pd' in vm_['profiles'][profile]:
-            delete_boot_pd = vm_['profiles'][profile]['delete_boot_pd']
+
+    if profile and profile in vm_['profiles'] and 'delete_boot_pd' in vm_['profiles'][profile]:
+        delete_boot_pd = vm_['profiles'][profile]['delete_boot_pd']
 
     try:
         inst_deleted = conn.destroy_node(node)
@@ -1704,7 +1944,7 @@ def destroy(vm_name, call=None):
             'run the initial deployment: \n{1}'.format(
                 vm_name, exc
             ),
-            exc_info=log.isEnabledFor(logging.DEBUG)
+            exc_info_on_loglevel=logging.DEBUG
         )
         raise SaltCloudSystemExit(
             'Could not destroy instance {0}.'.format(vm_name)
@@ -1714,6 +1954,7 @@ def destroy(vm_name, call=None):
         'delete instance',
         'salt/cloud/{0}/deleted'.format(vm_name),
         {'name': vm_name},
+        transport=__opts__['transport']
     )
 
     if delete_boot_pd:
@@ -1726,6 +1967,7 @@ def destroy(vm_name, call=None):
             'delete disk',
             'salt/cloud/disk/deleting',
             {'name': vm_name},
+            transport=__opts__['transport']
         )
         try:
             conn.destroy_volume(conn.ex_get_volume(vm_name))
@@ -1739,26 +1981,45 @@ def destroy(vm_name, call=None):
                 'to run the initial deployment: \n{1}'.format(
                     vm_name, exc
                 ),
-                exc_info=log.isEnabledFor(logging.DEBUG)
+                exc_info_on_loglevel=logging.DEBUG
             )
         salt.utils.cloud.fire_event(
             'event',
             'deleted disk',
             'salt/cloud/disk/deleted',
             {'name': vm_name},
+            transport=__opts__['transport']
         )
+
+    if __opts__.get('update_cachedir', False) is True:
+        salt.utils.cloud.delete_minion_cachedir(vm_name, __active_provider_name__.split(':')[0], __opts__)
 
     return inst_deleted
 
 
-def create(vm_=None, call=None):
+def request_instance(vm_):
     '''
-    Create a single GCE instance from a data dict.
+    Request a single GCE instance from a data dict.
     '''
-    if call:
+    if not GCE_VM_NAME_REGEX.match(vm_['name']):
         raise SaltCloudSystemExit(
-            'You cannot create an instance with -a or -f.'
+            'VM names must start with a letter, only contain letters, numbers, or dashes '
+            'and cannot end in a dash.'
         )
+
+    try:
+        # Check for required profile parameters before sending any API calls.
+        if vm_['profile'] and config.is_profile_configured(__opts__,
+                                                           __active_provider_name__ or 'gce',
+                                                           vm_['profile']) is False:
+            return False
+    except AttributeError:
+        pass
+
+    # Since using "provider: <provider-engine>" is deprecated, alias provider
+    # to use driver: "driver: <provider-engine>"
+    if 'provider' in vm_:
+        vm_['driver'] = vm_.pop('provider')
 
     conn = get_conn()
 
@@ -1770,13 +2031,42 @@ def create(vm_=None, call=None):
         'ex_network': __get_network(conn, vm_),
         'ex_tags': __get_tags(vm_),
         'ex_metadata': __get_metadata(vm_),
-        'external_ip': config.get_cloud_config_value(
-                'external_ip', vm_, __opts__, default='ephemeral'
-            )
     }
+    external_ip = config.get_cloud_config_value(
+        'external_ip', vm_, __opts__, default='ephemeral'
+    )
 
-    if 'external_ip' in kwargs and kwargs['external_ip'] == "None":
-        kwargs['external_ip'] = None
+    if external_ip.lower() == 'ephemeral':
+        external_ip = 'ephemeral'
+    elif external_ip == 'None':
+        external_ip = None
+    else:
+        region = '-'.join(kwargs['location'].name.split('-')[:2])
+        kwargs['external_ip'] = __create_orget_address(conn, kwargs['external_ip'], region)
+    kwargs['external_ip'] = external_ip
+    vm_['external_ip'] = external_ip
+
+    if LIBCLOUD_VERSION_INFO > (0, 15, 1):
+
+        kwargs.update({
+            'ex_disk_type': config.get_cloud_config_value(
+                'ex_disk_type', vm_, __opts__, default='pd-standard'),
+            'ex_disk_auto_delete': config.get_cloud_config_value(
+                'ex_disk_auto_delete', vm_, __opts__, default=True),
+            'ex_disks_gce_struct': config.get_cloud_config_value(
+                'ex_disks_gce_struct', vm_, __opts__, default=None),
+            'ex_service_accounts': config.get_cloud_config_value(
+                'ex_service_accounts', vm_, __opts__, default=None),
+            'ex_can_ip_forward': config.get_cloud_config_value(
+                'ip_forwarding', vm_, __opts__, default=False
+            )
+        })
+        if kwargs.get('ex_disk_type') not in ('pd-standard', 'pd-ssd'):
+            raise SaltCloudSystemExit(
+                'The value of \'ex_disk_type\' needs to be one of: '
+                '\'pd-standard\', \'pd-ssd\''
+            )
+
     log.info('Creating GCE instance {0} in {1}'.format(vm_['name'],
         kwargs['location'].name)
     )
@@ -1789,12 +2079,13 @@ def create(vm_=None, call=None):
         {
             'name': vm_['name'],
             'profile': vm_['profile'],
-            'provider': vm_['provider'],
+            'provider': vm_['driver'],
         },
+        transport=__opts__['transport']
     )
 
     try:
-        node_data = conn.create_node(**kwargs)  # pylint: disable=W0142
+        node_data = conn.create_node(**kwargs)
     except Exception as exc:  # pylint: disable=W0703
         log.error(
             'Error creating {0} on GCE\n\n'
@@ -1802,109 +2093,44 @@ def create(vm_=None, call=None):
             'run the initial deployment: \n{1}'.format(
                 vm_['name'], exc
             ),
-            exc_info=log.isEnabledFor(logging.DEBUG)
+            exc_info_on_loglevel=logging.DEBUG
         )
         return False
 
-    node_dict = _expand_node(node_data)
+    try:
+        node_dict = show_instance(node_data['name'], 'action')
+    except TypeError:
+        # node_data is a libcloud Node which is unsubscriptable
+        node_dict = show_instance(node_data.name, 'action')
 
-    if config.get_cloud_config_value('deploy', vm_, __opts__) is True:
-        deploy_script = script(vm_)
-        ssh_user, ssh_key = __get_ssh_credentials(vm_)
-        deploy_kwargs = {
-            'host': __get_host(node_data),
-            'username': ssh_user,
-            'key_filename': ssh_key,
-            'script': deploy_script.script,
-            'name': vm_['name'],
-            'tmp_dir': config.get_cloud_config_value(
-                'tmp_dir', vm_, __opts__, default='/tmp/.saltcloud'
-            ),
-            'deploy_command': config.get_cloud_config_value(
-                'deploy_command', vm_, __opts__,
-                default='/tmp/.saltcloud/deploy.sh',
-            ),
-            'start_action': __opts__['start_action'],
-            'parallel': __opts__['parallel'],
-            'sock_dir': __opts__['sock_dir'],
-            'conf_file': __opts__['conf_file'],
-            'minion_pem': vm_['priv_key'],
-            'minion_pub': vm_['pub_key'],
-            'keep_tmp': __opts__['keep_tmp'],
-            'preseed_minion_keys': vm_.get('preseed_minion_keys', None),
-            'sudo': config.get_cloud_config_value(
-                'sudo', vm_, __opts__, default=(ssh_user != 'root')
-            ),
-            'sudo_password': config.get_cloud_config_value(
-                'sudo_password', vm_, __opts__, default=None
-            ),
-            'tty': config.get_cloud_config_value(
-                'tty', vm_, __opts__, default=(ssh_user != 'root')
-            ),
-            'display_ssh_output': config.get_cloud_config_value(
-                'display_ssh_output', vm_, __opts__, default=True
-            ),
-            'script_args': config.get_cloud_config_value(
-                'script_args', vm_, __opts__
-            ),
-            'script_env': config.get_cloud_config_value(
-                'script_env', vm_, __opts__
-            ),
-            'minion_conf': salt.utils.cloud.minion_config(__opts__, vm_)
-        }
+    return node_dict, node_data
 
-        # Deploy salt-master files, if necessary
-        if config.get_cloud_config_value('make_master', vm_, __opts__) is True:
-            deploy_kwargs['make_master'] = True
-            deploy_kwargs['master_pub'] = vm_['master_pub']
-            deploy_kwargs['master_pem'] = vm_['master_pem']
-            master_conf = salt.utils.cloud.master_config(__opts__, vm_)
-            deploy_kwargs['master_conf'] = master_conf
 
-            if master_conf.get('syndic_master', None):
-                deploy_kwargs['make_syndic'] = True
-
-        deploy_kwargs['make_minion'] = config.get_cloud_config_value(
-            'make_minion', vm_, __opts__, default=True
+def create(vm_=None, call=None):
+    '''
+    Create a single GCE instance from a data dict.
+    '''
+    if call:
+        raise SaltCloudSystemExit(
+            'You cannot create an instance with -a or -f.'
         )
 
-        # Store what was used to the deploy the VM
-        event_kwargs = copy.deepcopy(deploy_kwargs)
-        del event_kwargs['minion_pem']
-        del event_kwargs['minion_pub']
-        del event_kwargs['sudo_password']
-        if 'password' in event_kwargs:
-            del event_kwargs['password']
-        node_dict['deploy_kwargs'] = event_kwargs
-
-        salt.utils.cloud.fire_event(
-            'event',
-            'executing deploy script',
-            'salt/cloud/{0}/deploying'.format(vm_['name']),
-            {'kwargs': event_kwargs},
+    node_info = request_instance(vm_)
+    if isinstance(node_info, bool):
+        raise SaltCloudSystemExit(
+            'There was an error creating the GCE instance.'
         )
+    node_dict = node_info[0]
+    node_data = node_info[1]
 
-        # pylint: disable=W0142
-        deployed = salt.utils.cloud.deploy_script(**deploy_kwargs)
-        if deployed:
-            log.info('Salt installed on {0}'.format(vm_['name']))
-        else:
-            log.error(
-                'Failed to start Salt on Cloud VM {0}'.format(
-                    vm_['name']
-                )
-            )
+    ssh_user, ssh_key = __get_ssh_credentials(vm_)
+    vm_['ssh_host'] = __get_host(node_data, vm_)
+    vm_['key_filename'] = ssh_key
+    salt.utils.cloud.bootstrap(vm_, __opts__)
 
-        salt.utils.cloud.fire_event(
-            'event',
-            'executed deploy script',
-            'salt/cloud/{0}/deployed'.format(vm_['name']),
-            {'kwargs': event_kwargs},
-        )
-
-    log.info('Created Cloud VM {0[name]!r}'.format(vm_))
-    log.debug(
-        '{0[name]!r} VM creation details:\n{1}'.format(
+    log.info('Created Cloud VM \'{0[name]}\''.format(vm_))
+    log.trace(
+        '\'{0[name]}\' VM creation details:\n{1}'.format(
             vm_, pprint.pformat(node_dict)
         )
     )
@@ -1916,8 +2142,95 @@ def create(vm_=None, call=None):
         {
             'name': vm_['name'],
             'profile': vm_['profile'],
-            'provider': vm_['provider'],
+            'provider': vm_['driver'],
         },
+        transport=__opts__['transport']
     )
 
     return node_dict
+
+
+def update_pricing(kwargs=None, call=None):
+    '''
+    Download most recent pricing information from GCE and save locally
+
+    CLI Examples:
+
+    .. code-block:: bash
+
+        salt-cloud -f update_pricing my-gce-config
+
+    .. versionadded:: 2015.8.0
+    '''
+    url = 'https://cloudpricingcalculator.appspot.com/static/data/pricelist.json'
+    price_json = http.query(url, decode=True, decode_type='json')
+
+    outfile = os.path.join(
+        syspaths.CACHE_DIR, 'cloud', 'gce-pricing.p'
+    )
+    with salt.utils.fopen(outfile, 'w') as fho:
+        msgpack.dump(price_json['dict'], fho)
+
+    return True
+
+
+def show_pricing(kwargs=None, call=None):
+    '''
+    Show pricing for a particular profile. This is only an estimate, based on
+    unofficial pricing sources.
+
+    .. versionadded:: 2015.8.0
+
+    CLI Examples:
+
+    .. code-block:: bash
+
+        salt-cloud -f show_pricing my-gce-config profile=my-profile
+    '''
+    profile = __opts__['profiles'].get(kwargs['profile'], {})
+    if not profile:
+        return {'Error': 'The requested profile was not found'}
+
+    # Make sure the profile belongs to Digital Ocean
+    provider = profile.get('provider', '0:0')
+    comps = provider.split(':')
+    if len(comps) < 2 or comps[1] != 'gce':
+        return {'Error': 'The requested profile does not belong to GCE'}
+
+    comps = profile.get('location', 'us').split('-')
+    region = comps[0]
+
+    size = 'CP-COMPUTEENGINE-VMIMAGE-{0}'.format(profile['size'].upper())
+    pricefile = os.path.join(
+        syspaths.CACHE_DIR, 'cloud', 'gce-pricing.p'
+    )
+    if not os.path.exists(pricefile):
+        update_pricing()
+
+    with salt.utils.fopen(pricefile, 'r') as fho:
+        sizes = msgpack.load(fho)
+
+    per_hour = float(sizes['gcp_price_list'][size][region])
+
+    week1_discount = float(sizes['gcp_price_list']['sustained_use_tiers']['0.25'])
+    week2_discount = float(sizes['gcp_price_list']['sustained_use_tiers']['0.50'])
+    week3_discount = float(sizes['gcp_price_list']['sustained_use_tiers']['0.75'])
+    week4_discount = float(sizes['gcp_price_list']['sustained_use_tiers']['1.0'])
+    week1 = per_hour * (730/4) * week1_discount
+    week2 = per_hour * (730/4) * week2_discount
+    week3 = per_hour * (730/4) * week3_discount
+    week4 = per_hour * (730/4) * week4_discount
+
+    raw = sizes
+    ret = {}
+
+    ret['per_hour'] = per_hour
+    ret['per_day'] = ret['per_hour'] * 24
+    ret['per_week'] = ret['per_day'] * 7
+    ret['per_month'] = week1 + week2 + week3 + week4
+    ret['per_year'] = ret['per_month'] * 12
+
+    if kwargs.get('raw', False):
+        ret['_raw'] = raw
+
+    return {profile['profile']: ret}

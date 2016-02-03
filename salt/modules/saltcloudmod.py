@@ -2,6 +2,7 @@
 '''
 Control a salt cloud system
 '''
+from __future__ import absolute_import
 
 # Import python libs
 import json
@@ -25,7 +26,7 @@ def __virtual__():
     '''
     if HAS_CLOUD:
         return __virtualname__
-    return False
+    return (False, 'The saltcloudmod execution module failed to load: requires the saltcloud library.')
 
 
 def create(name, profile):
@@ -39,7 +40,7 @@ def create(name, profile):
         salt <minion-id> saltcloud.create webserver rackspace_centos_512
     '''
     cmd = 'salt-cloud --out json -p {0} {1}'.format(profile, name)
-    out = __salt__['cmd.run_stdout'](cmd)
+    out = __salt__['cmd.run_stdout'](cmd, python_shell=False)
     try:
         ret = json.loads(out, object_hook=salt.utils.decode_dict)
     except ValueError:

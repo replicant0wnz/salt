@@ -5,14 +5,14 @@
 Pythonic object interface to creating state data, see the pyobjects renderer
 for more documentation.
 '''
+from __future__ import absolute_import
 import inspect
 import logging
 
-from collections import namedtuple
-
 from salt.utils.odict import OrderedDict
+import salt.ext.six as six
 
-REQUISITES = ('require', 'watch', 'use', 'require_in', 'watch_in', 'use_in')
+REQUISITES = ('listen', 'onchanges', 'onfail', 'require', 'watch', 'use', 'listen_in', 'onchanges_in', 'onfail_in', 'require_in', 'watch_in', 'use_in')
 
 log = logging.getLogger(__name__)
 
@@ -37,6 +37,7 @@ class Registry(object):
     requisites = []
     includes = []
     extends = OrderedDict()
+    enabled = True
 
     @classmethod
     def empty(cls):
@@ -47,13 +48,16 @@ class Registry(object):
 
     @classmethod
     def include(cls, *args):
+        if not cls.enabled:
+            return
+
         cls.includes += args
 
     @classmethod
     def salt_data(cls):
         states = OrderedDict([
             (id_, states_)
-            for id_, states_ in cls.states.iteritems()
+            for id_, states_ in six.iteritems(cls.states)
         ])
 
         if cls.includes:
@@ -62,7 +66,7 @@ class Registry(object):
         if cls.extends:
             states['extend'] = OrderedDict([
                 (id_, states_)
-                for id_, states_ in cls.extends.iteritems()
+                for id_, states_ in six.iteritems(cls.extends)
             ])
 
         cls.empty()
@@ -71,6 +75,9 @@ class Registry(object):
 
     @classmethod
     def add(cls, id_, state, extend=False):
+        if not cls.enabled:
+            return
+
         if extend:
             attr = cls.extends
         else:
@@ -78,10 +85,12 @@ class Registry(object):
 
         if id_ in attr:
             if state.full_func in attr[id_]:
-                raise DuplicateState("A state with id '%s', type '%s' exists" % (
-                    id_,
-                    state.full_func
-                ))
+                raise DuplicateState(
+                    "A state with id '\'{0}\'', type '\'{1}\'' exists".format(
+                        id_,
+                        state.full_func
+                    )
+                )
         else:
             attr[id_] = OrderedDict()
 
@@ -104,10 +113,16 @@ class Registry(object):
 
     @classmethod
     def push_requisite(cls, requisite):
+        if not cls.enabled:
+            return
+
         cls.requisites.append(requisite)
 
     @classmethod
     def pop_requisite(cls):
+        if not cls.enabled:
+            return
+
         del cls.requisites[-1]
 
 
@@ -155,8 +170,11 @@ class StateFactory(object):
 
     def __getattr__(self, func):
         if len(self.valid_funcs) > 0 and func not in self.valid_funcs:
-            raise InvalidFunction("The function '%s' does not exist in the "
-                                  "StateFactory for '%s'" % (func, self.module))
+            raise InvalidFunction('The function \'{0}\' does not exist in the '
+                                  'StateFactory for \'{1}\''.format(
+                                      func,
+                                      self.module
+                                  ))
 
         def make_state(id_, **kwargs):
             return State(
@@ -180,7 +198,7 @@ class State(object):
     This represents a single item in the state tree
 
     The id_ is the id of the state, the func is the full name of the salt
-    state (ie. file.managed). All the keyword args you pass in become the
+    state (i.e. file.managed). All the keyword args you pass in become the
     properties of your state.
     '''
 
@@ -188,6 +206,16 @@ class State(object):
         self.id_ = id_
         self.module = module
         self.func = func
+
+        # our requisites should all be lists, but when you only have a
+        # single item it's more convenient to provide it without
+        # wrapping it in a list. transform them into a list
+        for attr in REQUISITES:
+            if attr in kwargs:
+                try:
+                    iter(kwargs[attr])
+                except TypeError:
+                    kwargs[attr] = [kwargs[attr]]
         self.kwargs = kwargs
 
         if isinstance(self.id_, StateExtend):
@@ -205,12 +233,6 @@ class State(object):
         # handle our requisites
         for attr in REQUISITES:
             if attr in kwargs:
-                # our requisites should all be lists, but when you only have a
-                # single item it's more convenient to provide it without
-                # wrapping it in a list. transform them into a list
-                if not isinstance(kwargs[attr], list):
-                    kwargs[attr] = [kwargs[attr]]
-
                 # rebuild the requisite list transforming any of the actual
                 # StateRequisite objects into their representative dict
                 kwargs[attr] = [
@@ -222,15 +244,15 @@ class State(object):
         # have consistent ordering for tests
         return [
             {k: kwargs[k]}
-            for k in sorted(kwargs.iterkeys())
+            for k in sorted(six.iterkeys(kwargs))
         ]
 
     @property
     def full_func(self):
-        return "%s.%s" % (self.module, self.func)
+        return "{0!s}.{1!s}".format(self.module, self.func)
 
     def __str__(self):
-        return "%s = %s:%s" % (self.id_, self.full_func, self.attrs)
+        return "{0!s} = {1!s}:{2!s}".format(self.id_, self.full_func, self.attrs)
 
     def __call__(self):
         return {
@@ -254,27 +276,16 @@ class SaltObject(object):
         Salt.cmd.run(bar)
     '''
     def __init__(self, salt):
-        _mods = {}
-        for full_func in salt:
-            mod, func = full_func.split('.')
-
-            if mod not in _mods:
-                _mods[mod] = {}
-            _mods[mod][func] = salt[full_func]
-
-        # now transform using namedtuples
-        self.mods = {}
-        for mod in _mods:
-            mod_object = namedtuple('%sModule' % mod.capitalize(),
-                                    _mods[mod].keys())
-
-            self.mods[mod] = mod_object(**_mods[mod])
+        self._salt = salt
 
     def __getattr__(self, mod):
-        if mod not in self.mods:
-            raise AttributeError
-
-        return self.mods[mod]
+        class __wrapper__(object):
+            def __getattr__(wself, func):  # pylint: disable=E0213
+                try:
+                    return self._salt['{0}.{1}'.format(mod, func)]
+                except KeyError:
+                    raise AttributeError
+        return __wrapper__()
 
 
 class MapMeta(type):
@@ -342,8 +353,7 @@ def need_salt(*a, **k):
     return {}
 
 
-class Map(object):
-    __metaclass__ = MapMeta
+class Map(six.with_metaclass(MapMeta, object)):  # pylint: disable=W0232
     __salt__ = {
         'grains.filter_by': need_salt,
         'pillar.get': need_salt

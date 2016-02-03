@@ -3,7 +3,7 @@
 Using states instead of maps to deploy clouds
 =============================================
 
-.. versionadded:: 2014.1.0 (Hydrogen)
+.. versionadded:: 2014.1.0
 
 Use this minion to spin up a cloud instance:
 
@@ -14,8 +14,14 @@ Use this minion to spin up a cloud instance:
         my-ec2-config
 '''
 
+# Import python libs
+from __future__ import absolute_import
 import pprint
-from salt._compat import string_types
+
+# Import 3rd-party libs
+import salt.ext.six as six
+
+# Import Salt Libs
 import salt.utils.cloud as suc
 
 
@@ -49,6 +55,15 @@ def _valid(name, comment='', changes=None):
             'comment': comment}
 
 
+def _get_instance(names):
+    # for some reason loader overwrites __opts__['test'] with default
+    # value of False, thus store and then load it again after action
+    test = __opts__.get('test', False)
+    instance = __salt__['cloud.action'](fun='show_instance', names=names)
+    __opts__['test'] = test
+    return instance
+
+
 def present(name, cloud_provider, onlyif=None, unless=None, **kwargs):
     '''
     Spin up a single instance on a cloud provider, using salt-cloud. This state
@@ -77,34 +92,36 @@ def present(name, cloud_provider, onlyif=None, unless=None, **kwargs):
            'changes': {},
            'result': None,
            'comment': ''}
-    instance = __salt__['cloud.action'](
-        fun='show_instance', names=[name])
+
     retcode = __salt__['cmd.retcode']
-    prov = str([a for a in instance][0])
     if onlyif is not None:
-        if not isinstance(onlyif, string_types):
+        if not isinstance(onlyif, six.string_types):
             if not onlyif:
                 return _valid(name, comment='onlyif execution failed')
-        elif isinstance(onlyif, string_types):
-            if retcode(onlyif) != 0:
+        elif isinstance(onlyif, six.string_types):
+            if retcode(onlyif, python_shell=True) != 0:
                 return _valid(name, comment='onlyif execution failed')
     if unless is not None:
-        if not isinstance(unless, string_types):
+        if not isinstance(unless, six.string_types):
             if unless:
                 return _valid(name, comment='unless execution succeeded')
-        elif isinstance(unless, string_types):
-            if retcode(unless) == 0:
+        elif isinstance(unless, six.string_types):
+            if retcode(unless, python_shell=True) == 0:
                 return _valid(name, comment='unless execution succeeded')
-    if instance and 'Not Actioned' not in prov:
+
+    # provider=None not cloud_provider because
+    # need to ensure ALL providers don't have the instance
+    if __salt__['cloud.has_instance'](name=name, provider=None):
         ret['result'] = True
-        ret['comment'] = 'Instance {0} already exists in {1}'.format(name,
-                                                                     prov)
+        ret['comment'] = 'Already present instance {0}'.format(name)
         return ret
+
     if __opts__['test']:
         ret['comment'] = 'Instance {0} needs to be created'.format(name)
         return ret
+
     info = __salt__['cloud.create'](cloud_provider, name, **kwargs)
-    if info and not 'Error' in info:
+    if info and 'Error' not in info:
         ret['changes'] = info
         ret['result'] = True
         ret['comment'] = ('Created instance {0} using provider {1}'
@@ -113,7 +130,7 @@ def present(name, cloud_provider, onlyif=None, unless=None, **kwargs):
             cloud_provider,
             pprint.pformat(kwargs)
         )
-    elif info and not 'Error' in info:
+    elif info and 'Error' not in info:
         ret['result'] = False
         ret['comment'] = ('Failed to create instance {0}'
                           'using profile {1}: {2}').format(
@@ -127,7 +144,7 @@ def present(name, cloud_provider, onlyif=None, unless=None, **kwargs):
                           ' using profile {1},'
                           ' please check your configuration').format(name,
                                                                      profile)
-        return ret
+    return ret
 
 
 def absent(name, onlyif=None, unless=None):
@@ -153,30 +170,33 @@ def absent(name, onlyif=None, unless=None):
            'result': None,
            'comment': ''}
     retcode = __salt__['cmd.retcode']
-    instance = __salt__['cloud.action'](fun='show_instance', names=[name])
-    if not instance:
+
+    if onlyif is not None:
+        if not isinstance(onlyif, six.string_types):
+            if not onlyif:
+                return _valid(name, comment='onlyif execution failed')
+        elif isinstance(onlyif, six.string_types):
+            if retcode(onlyif, python_shell=True) != 0:
+                return _valid(name, comment='onlyif execution failed')
+    if unless is not None:
+        if not isinstance(unless, six.string_types):
+            if unless:
+                return _valid(name, comment='unless execution succeeded')
+        elif isinstance(unless, six.string_types):
+            if retcode(unless, python_shell=True) == 0:
+                return _valid(name, comment='unless execution succeeded')
+
+    if not __salt__['cloud.has_instance'](name=name, provider=None):
         ret['result'] = True
-        ret['comment'] = 'Instance {0} already absent'.format(name)
+        ret['comment'] = 'Already absent instance {0}'.format(name)
         return ret
+
     if __opts__['test']:
         ret['comment'] = 'Instance {0} needs to be destroyed'.format(name)
         return ret
-    if onlyif is not None:
-        if not isinstance(onlyif, string_types):
-            if not onlyif:
-                return _valid(name, comment='onlyif execution failed')
-        elif isinstance(onlyif, string_types):
-            if retcode(onlyif) != 0:
-                return _valid(name, comment='onlyif execution failed')
-    if unless is not None:
-        if not isinstance(unless, string_types):
-            if unless:
-                return _valid(name, comment='unless execution succeeded')
-        elif isinstance(unless, string_types):
-            if retcode(unless) == 0:
-                return _valid(name, comment='unless execution succeeded')
+
     info = __salt__['cloud.destroy'](name)
-    if info and not 'Error' in info:
+    if info and 'Error' not in info:
         ret['changes'] = info
         ret['result'] = True
         ret['comment'] = ('Destroyed instance {0}').format(
@@ -226,31 +246,42 @@ def profile(name, profile, onlyif=None, unless=None, **kwargs):
            'comment': ''}
     retcode = __salt__['cmd.retcode']
     if onlyif is not None:
-        if not isinstance(onlyif, string_types):
+        if not isinstance(onlyif, six.string_types):
             if not onlyif:
                 return _valid(name, comment='onlyif execution failed')
-        elif isinstance(onlyif, string_types):
-            if retcode(onlyif) != 0:
+        elif isinstance(onlyif, six.string_types):
+            if retcode(onlyif, python_shell=True) != 0:
                 return _valid(name, comment='onlyif execution failed')
     if unless is not None:
-        if not isinstance(unless, string_types):
+        if not isinstance(unless, six.string_types):
             if unless:
                 return _valid(name, comment='unless execution succeeded')
-        elif isinstance(unless, string_types):
-            if retcode(unless) == 0:
+        elif isinstance(unless, six.string_types):
+            if retcode(unless, python_shell=True) == 0:
                 return _valid(name, comment='unless execution succeeded')
-    instance = __salt__['cloud.action'](fun='show_instance', names=[name])
-    prov = str(instance.keys()[0])
+    instance = _get_instance([name])
+    prov = str(next(six.iterkeys(instance)))
     if instance and 'Not Actioned' not in prov:
         ret['result'] = True
-        ret['comment'] = 'Instance {0} already exists in {1}'.format(
-            name, prov)
+        ret['comment'] = 'Already present instance {0}'.format(name)
         return ret
+
     if __opts__['test']:
         ret['comment'] = 'Instance {0} needs to be created'.format(name)
         return ret
+
     info = __salt__['cloud.profile'](profile, name, vm_overrides=kwargs)
-    if info and not 'Error' in info:
+
+    # get either {Error: ''} or {namestring: {Error: ''}}
+    # which is what we can get from providers returns
+    main_error = info.get('Error', '')
+    name_error = ''
+    if isinstance(info, dict):
+        subinfo = info.get(name, {})
+        if isinstance(subinfo, dict):
+            name_error = subinfo.get('Error', None)
+    error = main_error or name_error
+    if info and not error:
         node_info = info.get(name)
         ret['result'] = True
         default_msg = 'Created instance {0} using profile {1}'.format(
@@ -262,13 +293,13 @@ def profile(name, profile, onlyif=None, unless=None, **kwargs):
         else:
             ret['changes'] = info
             ret['comment'] = default_msg
-    elif 'Error' in info:
+    elif error:
         ret['result'] = False
         ret['comment'] = ('Failed to create instance {0}'
-                          'using profile {1}: {2}').format(
+                          ' using profile {1}: {2}').format(
             name,
             profile,
-            info['Error'],
+            '{0}\n{1}\n'.format(main_error, name_error).strip(),
         )
     else:
         ret['result'] = False
@@ -290,7 +321,7 @@ def volume_present(name, provider=None, **kwargs):
 
     volumes = __salt__['cloud.volume_list'](provider=provider)
 
-    if name in volumes.keys():
+    if name in volumes:
         ret['comment'] = 'Volume exists: {0}'.format(name)
         ret['result'] = True
         return ret
@@ -324,7 +355,7 @@ def volume_absent(name, provider=None, **kwargs):
 
     volumes = __salt__['cloud.volume_list'](provider=provider)
 
-    if not name in volumes.keys():
+    if name not in volumes:
         ret['comment'] = 'Volume is absent.'
         ret['result'] = True
         return ret
@@ -366,13 +397,14 @@ def volume_attached(name, server_name, provider=None, **kwargs):
         names=server_name
     )
 
-    if name in volumes.keys() and volumes[name]['attachments']:
+    if name in volumes and volumes[name]['attachments']:
         volume = volumes[name]
-        ret['comment'] = ('Volume {name} is already'
-                          'attached: {attachments}').format(**volumes[name])
+        ret['comment'] = (
+                          'Volume {name} is already attached: {attachments}'
+                          ).format(**volumes[name])
         ret['result'] = True
         return ret
-    elif not name in volumes.keys():
+    elif name not in volumes:
         ret['comment'] = 'Volume {0} does not exist'.format(name)
         ret['result'] = False
         return ret
@@ -406,12 +438,14 @@ def volume_attached(name, server_name, provider=None, **kwargs):
 def volume_detached(name, server_name=None, provider=None, **kwargs):
     '''
     Check if a block volume is attached.
+
+    Returns True if server or Volume do not exist.
     '''
     ret = _check_name(name)
     if not ret['result']:
         return ret
 
-    if not server_name is None:
+    if server_name is not None:
         ret = _check_name(server_name)
         if not ret['result']:
             return ret
@@ -422,20 +456,20 @@ def volume_detached(name, server_name=None, provider=None, **kwargs):
     else:
         instance = None
 
-    if name in volumes.keys() and not volumes[name]['attachments']:
+    if name in volumes and not volumes[name]['attachments']:
         volume = volumes[name]
         ret['comment'] = (
             'Volume {name} is not currently attached to anything.'
         ).format(**volumes[name])
         ret['result'] = True
         return ret
-    elif not name in volumes.keys():
+    elif name not in volumes:
         ret['comment'] = 'Volume {0} does not exist'.format(name)
-        ret['result'] = False
+        ret['result'] = True
         return ret
-    elif not instance and not server_name is None:
+    elif not instance and server_name is not None:
         ret['comment'] = 'Server {0} does not exist'.format(server_name)
-        ret['result'] = False
+        ret['result'] = True
         return ret
     elif __opts__['test']:
         ret['comment'] = 'Volume {0} will be will be detached.'.format(

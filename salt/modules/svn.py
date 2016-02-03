@@ -2,13 +2,13 @@
 '''
 Subversion SCM
 '''
+from __future__ import absolute_import
 
 # Import python libs
 import re
-import shlex
-import subprocess
 
 # Import salt libs
+import salt.utils
 from salt import utils, exceptions
 
 _INI_RE = re.compile(r"^([^:]+):\s+(\S.*)$", re.M)
@@ -18,16 +18,11 @@ def __virtual__():
     '''
     Only load if svn is installed
     '''
-    if utils.which('svn'):
+    if utils.which('svn') is None:
+        return (False,
+                'The svn execution module cannot be loaded: svn unavailable.')
+    else:
         return True
-    return False
-
-
-def _check_svn():
-    '''
-    Check for svn on this node.
-    '''
-    utils.check_or_die('svn')
 
 
 def _run_svn(cmd, cwd, user, username, password, opts, **kwargs):
@@ -58,21 +53,22 @@ def _run_svn(cmd, cwd, user, username, password, opts, **kwargs):
     kwargs
         Additional options to pass to the run-cmd
     '''
-    cmd = 'svn --non-interactive {0} '.format(cmd)
-    if username:
-        opts += ('--username', username)
-    if password:
-        opts += ('--password', password)
-    if opts:
-        cmd += subprocess.list2cmdline(opts)
+    cmd = ['svn', '--non-interactive', cmd]
 
-    result = __salt__['cmd.run_all'](cmd, cwd=cwd, runas=user, **kwargs)
+    options = list(opts)
+    if username:
+        options.extend(['--username', username])
+    if password:
+        options.extend(['--password', password])
+    cmd.extend(options)
+
+    result = __salt__['cmd.run_all'](cmd, python_shell=False, cwd=cwd, runas=user, **kwargs)
 
     retcode = result['retcode']
 
     if retcode == 0:
         return result['stdout']
-    raise exceptions.CommandExecutionError(result['stderr'] + '\n\n' + cmd)
+    raise exceptions.CommandExecutionError(result['stderr'] + '\n\n' + ' '.join(cmd))
 
 
 def info(cwd,
@@ -116,7 +112,7 @@ def info(cwd,
     if fmt == 'xml':
         opts.append('--xml')
     if targets:
-        opts += shlex.split(targets)
+        opts += salt.utils.shlex_split(targets)
     infos = _run_svn('info', cwd, user, username, password, opts)
 
     if fmt in ('str', 'xml'):
@@ -179,7 +175,7 @@ def checkout(cwd,
 def switch(cwd, remote, target=None, user=None, username=None,
            password=None, *opts):
     '''
-    .. versionadded:: 2014.1.0 (Hydrogen)
+    .. versionadded:: 2014.1.0
 
     Switch a working copy of a remote Subversion repository
     directory
@@ -203,7 +199,9 @@ def switch(cwd, remote, target=None, user=None, username=None,
     password : None
         Connect to the Subversion server with this password
 
-    CLI Example::
+    CLI Example:
+
+    .. code-block:: bash
 
         salt '*' svn.switch /path/to/repo svn://remote/repo
     '''
@@ -243,7 +241,7 @@ def update(cwd, targets=None, user=None, username=None, password=None, *opts):
         salt '*' svn.update /path/to/repo
     '''
     if targets:
-        opts += tuple(shlex.split(targets))
+        opts += tuple(salt.utils.shlex_split(targets))
     return _run_svn('update', cwd, user, username, password, opts)
 
 
@@ -277,7 +275,7 @@ def diff(cwd, targets=None, user=None, username=None, password=None, *opts):
         salt '*' svn.diff /path/to/repo
     '''
     if targets:
-        opts += tuple(shlex.split(targets))
+        opts += tuple(salt.utils.shlex_split(targets))
     return _run_svn('diff', cwd, user, username, password, opts)
 
 
@@ -322,7 +320,7 @@ def commit(cwd,
     if msg:
         opts += ('-m', msg)
     if targets:
-        opts += tuple(shlex.split(targets))
+        opts += tuple(salt.utils.shlex_split(targets))
     return _run_svn('commit', cwd, user, username, password, opts)
 
 
@@ -354,7 +352,7 @@ def add(cwd, targets, user=None, username=None, password=None, *opts):
         salt '*' svn.add /path/to/repo /path/to/new/file
     '''
     if targets:
-        opts += tuple(shlex.split(targets))
+        opts += tuple(salt.utils.shlex_split(targets))
     return _run_svn('add', cwd, user, username, password, opts)
 
 
@@ -397,7 +395,7 @@ def remove(cwd,
     if msg:
         opts += ('-m', msg)
     if targets:
-        opts += tuple(shlex.split(targets))
+        opts += tuple(salt.utils.shlex_split(targets))
     return _run_svn('remove', cwd, user, username, password, opts)
 
 
@@ -431,7 +429,7 @@ def status(cwd, targets=None, user=None, username=None, password=None, *opts):
         salt '*' svn.status /path/to/repo
     '''
     if targets:
-        opts += tuple(shlex.split(targets))
+        opts += tuple(salt.utils.shlex_split(targets))
     return _run_svn('status', cwd, user, username, password, opts)
 
 

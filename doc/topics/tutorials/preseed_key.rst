@@ -1,11 +1,23 @@
-=================================
+================================
 Preseed Minion with Accepted Key
-=================================
+================================
 
 In some situations, it is not convenient to wait for a minion to start before
 accepting its key on the master. For instance, you may want the minion to
 bootstrap itself as soon as it comes online. You may also want to to let your
 developers provision new development machines on the fly.
+
+.. seealso:: Many ways to preseed minion keys
+
+    Salt has other ways to generate and pre-accept minion keys in addition to
+    the manual steps outlined below.
+
+    salt-cloud performs these same steps automatically when new cloud VMs are
+    created (unless instructed not to).
+
+    salt-api exposes an HTTP call to Salt's REST API to :py:class:`generate and
+    download the new minion keys as a tarball
+    <salt.netapi.rest_cherrypy.app.Keys>`.
 
 There is a general four step process to do this:
 
@@ -32,8 +44,8 @@ master config file.
 
 There is no single method to get the keypair to your minion.  The difficulty is
 finding a distribution method which is secure. For Amazon EC2 only, an AWS best
-practice is to use IAM Roles to pass credentials. (See blog post, 
-http://blogs.aws.amazon.com/php/post/Tx1F82CR0ANO3ZI/Providing-credentials-to-the-AWS-SDK-for-PHP )
+practice is to use IAM Roles to pass credentials. (See blog post,
+http://blogs.aws.amazon.com/security/post/Tx610S2MLVZWEA/Using-IAM-roles-to-distribute-non-AWS-credentials-to-your-EC2-instances )
 
 .. admonition:: Security Warning
 

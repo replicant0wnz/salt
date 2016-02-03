@@ -4,7 +4,11 @@ State to control Apache modjk
 '''
 
 # Python Libs
+from __future__ import absolute_import
 import logging
+
+# Import 3rd-party libs
+import salt.ext.six as six
 
 log = logging.getLogger(__name__)
 
@@ -50,7 +54,7 @@ def _bulk_state(saltfunc, lbn, workers, profile):
         return ret
 
     errors = []
-    for worker, ok in cmdret.items():
+    for worker, ok in six.iteritems(cmdret):
         if not ok:
             errors.append(worker)
 
@@ -66,7 +70,9 @@ def worker_stopped(name, workers=None, profile='default'):
     '''
     Stop all the workers in the modjk load balancer
 
-    Example::
+    Example:
+
+    .. code-block:: yaml
 
         loadbalancer:
           modjk.worker_stopped:
@@ -85,7 +91,9 @@ def worker_activated(name, workers=None, profile='default'):
     '''
     Activate all the workers in the modjk load balancer
 
-    Example::
+    Example:
+
+    .. code-block:: yaml
 
         loadbalancer:
           modjk.worker_activated:
@@ -104,7 +112,9 @@ def worker_disabled(name, workers=None, profile='default'):
     '''
     Disable all the workers in the modjk load balancer
 
-    Example::
+    Example:
+
+    .. code-block:: yaml
 
         loadbalancer:
           modjk.worker_disabled:
@@ -123,7 +133,9 @@ def worker_recover(name, workers=None, profile='default'):
     '''
     Recover all the workers in the modjk load balancer
 
-    Example::
+    Example:
+
+    .. code-block:: yaml
 
         loadbalancer:
           modjk.worker_recover:

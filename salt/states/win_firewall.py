@@ -30,7 +30,7 @@ def disabled(name):
             break
 
     if __opts__['test']:
-        ret['result'] = None
+        ret['result'] = not action or None
         return ret
 
     # Disable it
@@ -40,5 +40,36 @@ def disabled(name):
             ret['comment'] = 'Could not disable the FW'
     else:
         ret['comment'] = 'All the firewall profiles are disabled'
+
+    return ret
+
+
+def add_rule(name, localport, protocol="tcp", action="allow", dir="in"):
+    '''
+    Add a new firewall rule (Windows only)
+    '''
+    ret = {'name': name,
+           'result': True,
+           'changes': {},
+           'comment': ''}
+
+    # Check if rule exists
+    commit = False
+    current_rules = __salt__['firewall.get_rule'](name)
+    if not current_rules:
+        commit = True
+        ret['changes'] = {'new rule': name}
+
+    if __opts__['test']:
+        ret['result'] = not commit or None
+        return ret
+
+    # Add rule
+    if commit:
+        ret['result'] = __salt__['firewall.add_rule'](name, localport, protocol, action, dir)
+        if not ret['result']:
+            ret['comment'] = 'Could not add rule'
+    else:
+        ret['comment'] = 'A rule with that name already exists'
 
     return ret

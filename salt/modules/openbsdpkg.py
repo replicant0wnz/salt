@@ -2,6 +2,7 @@
 '''
 Package support for OpenBSD
 '''
+from __future__ import absolute_import
 
 # Import python libs
 import copy
@@ -29,7 +30,8 @@ def __virtual__():
     '''
     if __grains__['os'] == 'OpenBSD':
         return __virtualname__
-    return False
+    return (False, 'The openbsdpkg execution module cannot be loaded: '
+            'only available on OpenBSD systems.')
 
 
 def list_pkgs(versions_as_list=False, **kwargs):
@@ -60,7 +62,7 @@ def list_pkgs(versions_as_list=False, **kwargs):
 
     ret = {}
     cmd = 'pkg_info -q -a'
-    out = __salt__['cmd.run_stdout'](cmd, output_loglevel='debug')
+    out = __salt__['cmd.run_stdout'](cmd, output_loglevel='trace')
     for line in out.splitlines():
         try:
             pkgname, pkgver, flavor = __PKG_RE.match(line).groups()
@@ -96,7 +98,7 @@ def latest_version(*names, **kwargs):
 
     stems = [x.split('--')[0] for x in names]
     cmd = 'pkg_info -q -I {0}'.format(' '.join(stems))
-    out = __salt__['cmd.run_stdout'](cmd, output_loglevel='debug')
+    out = __salt__['cmd.run_stdout'](cmd, python_shell=False, output_loglevel='trace')
     for line in out.splitlines():
         try:
             pkgname, pkgver, flavor = __PKG_RE.match(line).groups()
@@ -104,9 +106,9 @@ def latest_version(*names, **kwargs):
             continue
         pkgname += '--{0}'.format(flavor) if flavor else ''
         cur = pkgs.get(pkgname, '')
-        if not cur or __salt__['pkg_resource.compare'](pkg1=cur,
-                                                       oper='<',
-                                                       pkg2=pkgver):
+        if not cur or salt.utils.compare_versions(ver1=cur,
+                                                  oper='<',
+                                                  ver2=pkgver):
             ret[pkgname] = pkgver
 
     # Return a string if only one package name passed
@@ -115,7 +117,7 @@ def latest_version(*names, **kwargs):
     return ret
 
 # available_version is being deprecated
-available_version = latest_version
+available_version = salt.utils.alias_function(latest_version, 'available_version')
 
 
 def version(*names, **kwargs):
@@ -172,16 +174,31 @@ def install(name=None, pkgs=None, sources=None, **kwargs):
         return {}
 
     old = list_pkgs()
+    errors = []
     for pkg in pkg_params:
         if pkg_type == 'repository':
             stem, flavor = (pkg.split('--') + [''])[:2]
             pkg = '--'.join((stem, flavor))
         cmd = 'pkg_add -x {0}'.format(pkg)
-        __salt__['cmd.run'](cmd, output_loglevel='debug')
+        out = __salt__['cmd.run_all'](
+            cmd,
+            python_shell=False,
+            output_loglevel='trace'
+        )
+        if out['retcode'] != 0 and out['stderr']:
+            errors.append(out['stderr'])
 
     __context__.pop('pkg.list_pkgs', None)
     new = list_pkgs()
-    return salt.utils.compare_dicts(old, new)
+    ret = salt.utils.compare_dicts(old, new)
+
+    if errors:
+        raise CommandExecutionError(
+            'Problem encountered installing package(s)',
+            info={'errors': errors, 'changes': ret}
+        )
+
+    return ret
 
 
 def remove(name=None, pkgs=None, **kwargs):
@@ -219,10 +236,28 @@ def remove(name=None, pkgs=None, **kwargs):
         return {}
 
     cmd = 'pkg_delete -xD dependencies {0}'.format(' '.join(targets))
-    __salt__['cmd.run'](cmd, output_loglevel='debug')
+
+    out = __salt__['cmd.run_all'](
+        cmd,
+        python_shell=False,
+        output_loglevel='trace'
+    )
+    if out['retcode'] != 0 and out['stderr']:
+        errors = [out['stderr']]
+    else:
+        errors = []
+
     __context__.pop('pkg.list_pkgs', None)
     new = list_pkgs()
-    return salt.utils.compare_dicts(old, new)
+    ret = salt.utils.compare_dicts(old, new)
+
+    if errors:
+        raise CommandExecutionError(
+            'Problem encountered removing package(s)',
+            info={'errors': errors, 'changes': ret}
+        )
+
+    return ret
 
 
 def purge(name=None, pkgs=None, **kwargs):

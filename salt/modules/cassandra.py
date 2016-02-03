@@ -11,6 +11,7 @@ Cassandra NoSQL Database Module
         cassandra.host: localhost
         cassandra.thrift_port: 9160
 '''
+from __future__ import absolute_import
 
 # Import python libs
 import logging
@@ -32,11 +33,11 @@ def __virtual__():
     Only load if pycassa is available and the system is configured
     '''
     if not HAS_PYCASSA:
-        return False
+        return (False, 'The cassandra execution module cannot be loaded: pycassa not installed.')
 
     if HAS_PYCASSA and salt.utils.which('nodetool'):
         return 'cassandra'
-    return False
+    return (False, 'The cassandra execution module cannot be loaded: nodetool not found.')
 
 
 def _nodetool(cmd):
@@ -167,18 +168,18 @@ def column_families(keyspace=None):
 
     if keyspace:
         if keyspace in ksps:
-            return sys.get_keyspace_column_families(keyspace).keys()
+            return list(sys.get_keyspace_column_families(keyspace).keys())
         else:
             return None
     else:
         ret = {}
         for kspace in ksps:
-            ret[kspace] = sys.get_keyspace_column_families(kspace).keys()
+            ret[kspace] = list(sys.get_keyspace_column_families(kspace).keys())
 
         return ret
 
 
-def column_family_definition(keyspace=None, column_family=None):
+def column_family_definition(keyspace, column_family):
     '''
     Return a dictionary of column family definitions for the given
     keyspace/column_family

@@ -3,6 +3,7 @@
 The default service module, if not otherwise specified salt will fall back
 to this basic module
 '''
+from __future__ import absolute_import
 
 # Import python libs
 import os
@@ -26,12 +27,13 @@ def __virtual__():
         'RedHat',
         'CentOS',
         'Amazon',
-        'Scientific',
+        'ScientificLinux',
         'CloudLinux',
         'Fedora',
         'Gentoo',
         'Ubuntu',
         'Debian',
+        'Devuan',
         'Arch',
         'Arch ARM',
         'ALT',
@@ -39,21 +41,53 @@ def __virtual__():
         'OEL',
         'Linaro',
         'elementary OS',
-        'McAfee  OS Server'
+        'McAfee  OS Server',
+        'Mint'
     ))
     if __grains__.get('os', '') in disable:
-        return False
+        return (False, 'Your OS is on the disabled list')
     # Disable on all non-Linux OSes as well
     if __grains__['kernel'] != 'Linux':
-        return False
+        return (False, 'Non Linux OSes are not supported')
     # Suse >=12.0 uses systemd
-    if __grains__.get('os', '') == 'openSUSE':
+    if __grains__.get('os_family', '') == 'Suse':
         try:
-            if int(__grains__.get('osrelease', '').split('.')[0]) >= 12:
-                return False
+            # osrelease might be in decimal format (e.g. "12.1"), or for
+            # SLES might include service pack (e.g. "11 SP3"), so split on
+            # non-digit characters, and the zeroth element is the major
+            # number (it'd be so much simpler if it was always "X.Y"...)
+            import re
+            if int(re.split(r'\D+', __grains__.get('osrelease', ''))[0]) >= 12:
+                return (False, 'Suse version greater than or equal to 12 is not supported')
         except ValueError:
-            return False
+            return (False, 'You are missing the os_family grain')
     return 'service'
+
+
+def run(name, action):
+    '''
+    Run the specified service with an action.
+
+    .. versionadded:: 2015.8.1
+
+    name
+        Service name.
+
+    action
+        Action name (like start,  stop,  reload,  restart).
+
+    CLI Example:
+
+    .. code-block:: bash
+
+        salt '*' service.run apache2 reload
+        salt '*' service.run postgresql initdb
+    '''
+    cmd = os.path.join(
+        _GRAINMAP.get(__grains__.get('os'), '/etc/init.d'),
+        name
+    ) + ' ' + action
+    return not __salt__['cmd.retcode'](cmd, python_shell=False)
 
 
 def start(name):
@@ -66,11 +100,7 @@ def start(name):
 
         salt '*' service.start <service name>
     '''
-    cmd = os.path.join(
-        _GRAINMAP.get(__grains__.get('os'), '/etc/init.d'),
-        name
-    ) + ' start'
-    return not __salt__['cmd.retcode'](cmd)
+    return __salt__['service.run'](name, 'start')
 
 
 def stop(name):
@@ -83,11 +113,7 @@ def stop(name):
 
         salt '*' service.stop <service name>
     '''
-    cmd = os.path.join(
-        _GRAINMAP.get(__grains__.get('os'), '/etc/init.d'),
-        name
-    ) + ' stop'
-    return not __salt__['cmd.retcode'](cmd)
+    return __salt__['service.run'](name, 'stop')
 
 
 def restart(name):
@@ -100,11 +126,7 @@ def restart(name):
 
         salt '*' service.restart <service name>
     '''
-    cmd = os.path.join(
-        _GRAINMAP.get(__grains__.get('os'), '/etc/init.d'),
-        name
-    ) + ' restart'
-    return not __salt__['cmd.retcode'](cmd)
+    return __salt__['service.run'](name, 'restart')
 
 
 def status(name, sig=None):
@@ -124,7 +146,8 @@ def status(name, sig=None):
 
 def reload_(name):
     '''
-    Restart the specified service
+    Refreshes config files by calling service reload. Does not perform a full
+    restart.
 
     CLI Example:
 
@@ -132,11 +155,7 @@ def reload_(name):
 
         salt '*' service.reload <service name>
     '''
-    cmd = os.path.join(
-        _GRAINMAP.get(__grains__.get('os'), '/etc/init.d'),
-        name
-    ) + ' reload'
-    return not __salt__['cmd.retcode'](cmd)
+    return __salt__['service.run'](name, 'reload')
 
 
 def available(name):
@@ -165,7 +184,7 @@ def missing(name):
 
         salt '*' service.missing sshd
     '''
-    return not name in get_all()
+    return name not in get_all()
 
 
 def get_all():

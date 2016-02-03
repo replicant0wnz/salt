@@ -1,136 +1,7 @@
-Developing Salt
-===============
-
-There is a great need for contributions to Salt and patches are welcome! The goal
-here is to make contributions clear, make sure there is a trail for where the code
-has come from, and most importantly, to give credit where credit is due!
-
-There are a number of ways to contribute to salt development.
-
-
-Sending a GitHub pull request
------------------------------
-
-This is the preferred method for contributions. Simply create a GitHub
-fork, commit changes to the fork, and then open up a pull request.
-
-The following is an example (from `Open Comparison Contributing Docs`_ )
-of an efficient workflow for forking, cloning, branching, committing, and
-sending a pull request for a GitHub repository.
-
-First, make a local clone of your GitHub fork of the salt GitHub repo and make
-edits and changes locally.
-
-Then, create a new branch on your clone by entering the following commands:
-
-.. code-block:: bash
-
-    git checkout -b fixed-broken-thing
-
-    Switched to a new branch 'fixed-broken-thing'
-
-Choose a name for your branch that describes its purpose.
-
-Now commit your changes to this new branch with the following command:
-
-.. code-block:: bash
-
-    git commit -am 'description of my fixes for the broken thing'
-
-.. note::
-
-    Using ``git commit -am``, followed by a quoted string, both stages and
-    commits all modified files in a single command. Depending on the nature of
-    your changes, you may wish to stage and commit them separately. Also, note
-    that if you wish to add newly-tracked files as part of your commit, they
-    will not be caught using ``git commit -am`` and will need to be added using
-    ``git add`` before committing.
-
-Push your locally-committed changes back up to GitHub:
-
-.. code-block:: bash
-
-    git push --set-upstream origin fixed-broken-thing
-
-Now go look at your fork of the salt repo on the GitHub website. The new
-branch will now be listed under the "Source" tab where it says "Switch Branches".
-Select the new branch from this list, and then click the "Pull request" button.
-
-Put in a descriptive comment, and include links to any project issues related
-to the pull request.
-
-The repo managers will be notified of your pull request and it will be
-reviewed. If a reviewer asks for changes, just make the changes locally in the
-same local feature branch, push them to GitHub, then add a comment to the
-discussion section of the pull request.
-
-.. note:: Jenkins
-
-    Whenever you make a pull request against the main Salt repository your
-    changes will be tested on a variety of operating systems and
-    configurations. On average these tests take 30 minutes to run and once
-    they are complete a PASS/FAIL message will be added to your pull
-    request. This message contains a link to http://jenkins.saltstack.com
-    where you can review the test results. This message will also generate an
-    email which will be sent to the email address associated with your GitHub
-    account informing you of these results. It should be noted that a test
-    failure does not necessarily mean there is an issue in the associated pull
-    request as the entire development branch is tested.
-
-Keeping Salt Forks in Sync
---------------------------
-
-Salt is advancing quickly. It is therefore critical to pull upstream changes
-from master into forks on a regular basis. Nothing is worse than putting in a
-days of hard work into a pull request only to have it rejected because it has
-diverged too far from master.
-
-To pull in upstream changes:
-
-.. code-block:: bash
-
-    # For ssh github
-    git remote add upstream git@github.com:saltstack/salt.git
-    git fetch upstream
-
-    # For https github
-    git remote add upstream https://github.com/saltstack/salt.git
-    git fetch upstream
-
-
-To check the log to be sure that you actually want the changes, run the
-following before merging:
-
-.. code-block:: bash
-
-    git log upstream/develop
-
-Then to accept the changes and merge into the current branch:
-
-.. code-block:: bash
-
-    git merge upstream/develop
-
-For more info, see `GitHub Fork a Repo Guide`_ or `Open Comparison Contributing
-Docs`_
-
-.. _`GitHub Fork a Repo Guide`: https://help.github.com/articles/fork-a-repo
-.. _`Open Comparison Contributing Docs`: http://opencomparison.readthedocs.org/en/latest/contributing.html
-
-Posting patches to the mailing list
------------------------------------
-
-Patches will also be accepted by email. Format patches using `git
-format-patch`_ and send them to the Salt users mailing list. The contributor
-will then get credit for the patch, and the Salt community will have an archive
-of the patch and a place for discussion.
-
-.. _`git format-patch`: https://www.kernel.org/pub/software/scm/git/docs/git-format-patch.html
-
 .. _installing-for-development:
 
 Installing Salt for development
--------------------------------
+===============================
 
 Clone the repository using:
 
@@ -163,8 +34,13 @@ Create a new `virtualenv`_:
 
 .. _`virtualenv`: https://pypi.python.org/pypi/virtualenv
 
-On Arch Linux, where Python 3 is the default installation of Python, use the
-``virtualenv2`` command instead of ``virtualenv``.
+Avoid making your :ref:`virtualenv path too long <too_long_socket_path>`.
+
+On Arch Linux, where Python 3 is the default installation of Python, use
+the ``virtualenv2`` command instead of ``virtualenv``.
+
+On Gentoo you must use ``--system-site-packages`` to enable pkg and portage_config
+functionality
 
 .. note:: Using system Python modules in the virtualenv
 
@@ -173,6 +49,12 @@ On Arch Linux, where Python 3 is the default installation of Python, use the
     Using this method eliminates the requirement to install the salt dependencies
     again, although it does assume that the listed modules are all installed in the
     system PYTHONPATH at the time of virtualenv creation.
+
+.. note:: Python development package
+
+    Be sure to install python devel package in order to install required Python
+    modules. In Debian/Ubuntu run ``sudo apt-get install -y python-dev``. In RedHat
+    based system install ``python-devel``
 
 Activate the virtualenv:
 
@@ -185,7 +67,7 @@ Install Salt (and dependencies) into the virtualenv:
 .. code-block:: bash
 
     pip install M2Crypto    # Don't install on Debian/Ubuntu (see below)
-    pip install pyzmq PyYAML pycrypto msgpack-python jinja2 psutil
+    pip install pyzmq PyYAML pycrypto msgpack-python jinja2 psutil futures tornado
     pip install -e ./salt   # the path to the salt git clone from above
 
 .. note:: Installing M2Crypto
@@ -239,7 +121,7 @@ Install Salt (and dependencies) into the virtualenv:
     packages on RedHat-based systems.
 
 Running a self-contained development version
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+--------------------------------------------
 
 During development it is easiest to be able to run the Salt master and minion
 that are installed in the virtualenv you created above, and also to have all
@@ -250,15 +132,14 @@ Copy the master and minion config files into your virtualenv:
 .. code-block:: bash
 
     mkdir -p /path/to/your/virtualenv/etc/salt
-    cp ./salt/conf/master /path/to/your/virtualenv/etc/salt/master
-    cp ./salt/conf/minion /path/to/your/virtualenv/etc/salt/minion
+    cp ./salt/conf/master ./salt/conf/minion /path/to/your/virtualenv/etc/salt/
 
 Edit the master config file:
 
 1.  Uncomment and change the ``user: root`` value to your own user.
 2.  Uncomment and change the ``root_dir: /`` value to point to
     ``/path/to/your/virtualenv``.
-3.  If you are running version 0.11.1 or older, uncomment and change the
+3.  If you are running version 0.11.1 or older, uncomment, and change the
     ``pidfile: /var/run/salt-master.pid`` value to point to
     ``/path/to/your/virtualenv/salt-master.pid``.
 4.  If you are also running a non-development version of Salt you will have to
@@ -268,7 +149,7 @@ Edit the minion config file:
 
 1.  Repeat the edits you made in the master config for the ``user`` and
     ``root_dir`` values as well as any port changes.
-2.  If you are running version 0.11.1 or older, uncomment and change the
+2.  If you are running version 0.11.1 or older, uncomment, and change the
     ``pidfile: /var/run/salt-minion.pid`` value to point to
     ``/path/to/your/virtualenv/salt-minion.pid``.
 3.  Uncomment and change the ``master: salt`` value to point at ``localhost``.
@@ -304,21 +185,28 @@ do this, add ``-l debug`` to the calls to ``salt-master`` and ``salt-minion``.
 If you would like to log to the console instead of to the log file, remove the
 ``-d``.
 
-Once the minion starts, you may see an error like the following::
+.. _too_long_socket_path:
+.. note:: Too long socket path?
 
-    zmq.core.error.ZMQError: ipc path "/path/to/your/virtualenv/var/run/salt/minion/minion_event_7824dcbcfd7a8f6755939af70b96249f_pub.ipc" is longer than 107 characters (sizeof(sockaddr_un.sun_path)).
+    Once the minion starts, you may see an error like the following:
 
-This means the the path to the socket the minion is using is too long. This is
-a system limitation, so the only workaround is to reduce the length of this
-path. This can be done in a couple different ways:
+    .. code-block:: bash
 
-1.  Create your virtualenv in a path that is short enough.
-2.  Edit the :conf_minion:`sock_dir` minion config variable and reduce its
-    length. Remember that this path is relative to the value you set in
-    :conf_minion:`root_dir`.
+        zmq.core.error.ZMQError: ipc path "/path/to/your/virtualenv/
+        var/run/salt/minion/minion_event_7824dcbcfd7a8f6755939af70b96249f_pub.ipc"
+        is longer than 107 characters (sizeof(sockaddr_un.sun_path)).
 
-``NOTE:`` The socket path is limited to 107 characters on Solaris and Linux,
-and 103 characters on BSD-based systems.
+    This means that the path to the socket the minion is using is too long. This is
+    a system limitation, so the only workaround is to reduce the length of this
+    path. This can be done in a couple different ways:
+
+    1.  Create your virtualenv in a path that is short enough.
+    2.  Edit the :conf_minion:`sock_dir` minion config variable and reduce its
+        length. Remember that this path is relative to the value you set in
+        :conf_minion:`root_dir`.
+
+    ``NOTE:`` The socket path is limited to 107 characters on Solaris and Linux,
+    and 103 characters on BSD-based systems.
 
 .. note:: File descriptor limits
 
@@ -335,6 +223,48 @@ and 103 characters on BSD-based systems.
 
     To set file descriptors on OSX, refer to the :doc:`OS X Installation
     </topics/installation/osx>` instructions.
+
+
+Changing Default Paths
+~~~~~~~~~~~~~~~~~~~~~~
+
+Instead of updating your configuration files to point to the new root directory
+and having to pass the new configuration directory path to all of Salt's CLI
+tools, you can explicitly tweak the default system paths that Salt expects:
+
+.. code-block:: bash
+
+    GENERATE_SALT_SYSPATHS=1 pip install --global-option='--salt-root-dir=/path/to/your/virtualenv/' \
+        -e ./salt   # the path to the salt git clone from above
+
+
+You can now call all of Salt's CLI tools without explicitly passing the configuration directory.
+
+Additional Options
+..................
+
+In case you want to distribute your virtualenv, you probably don't want to
+include Salt's clone ``.git/`` directory, and, without it, Salt won't report
+the accurate version. You can tell ``setup.py`` to generate the hardcoded
+version information which is distributable:
+
+.. code-block:: bash
+
+    GENERATE_SALT_SYSPATHS=1 WRITE_SALT_VERSION=1 pip install --global-option='--salt-root-dir=/path/to/your/virtualenv/' \
+        -e ./salt   # the path to the salt git clone from above
+
+
+Instead of passing those two environmental variables, you can just pass a
+single one which will trigger the other two:
+
+.. code-block:: bash
+
+    MIMIC_SALT_INSTALL=1 pip install --global-option='--salt-root-dir=/path/to/your/virtualenv/' \
+        -e ./salt   # the path to the salt git clone from above
+
+
+This last one will grant you an editable salt installation with hardcoded
+system paths and version information.
 
 
 Installing Salt from the Python Package Index
@@ -358,7 +288,7 @@ to a virtualenv using pip:
 
 .. code-block:: bash
 
-    pip install Sphinx
+    pip install Sphinx==1.3.1
 
 Change to salt documentation directory, then:
 
@@ -389,7 +319,7 @@ Change to salt documentation directory, then:
 
 .. code-block:: bash
 
-    make SPHINXBUILD=sphinx-1.0-build html
+    make SPHINXBUILD=sphinx-build html
 
 Once you've updated the documentation, you can run the following command to
 launch a simple Python HTTP server to see your changes:
@@ -408,3 +338,10 @@ Run the test suite with following command:
     ./setup.py test
 
 See :doc:`here <tests/index>` for more information regarding the test suite.
+
+Issue and Pull Request Labeling System
+--------------------------------------
+
+SaltStack uses several labeling schemes to help facilitate code contributions
+and bug resolution. See the :ref:`Labels and Milestones
+<labels-and-milestones>` documentation for more information.

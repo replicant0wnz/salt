@@ -2,6 +2,7 @@
 '''
 Module for using the locate utilities
 '''
+from __future__ import absolute_import
 
 # Import python libs
 import logging
@@ -17,7 +18,7 @@ def __virtual__():
     Only work on POSIX-like systems
     '''
     if salt.utils.is_windows():
-        return False
+        return (False, 'The locate execution module cannot be loaded: only available on non-Windows systems.')
     return True
 
 
@@ -118,5 +119,5 @@ def locate(pattern, database='', limit=0, **kwargs):
     if 'regex' in kwargs and bool(kwargs['regex']) is True:
         options += ' --regex'
     cmd = 'locate {0} {1}'.format(options, pattern)
-    out = __salt__['cmd.run'](cmd).splitlines()
+    out = __salt__['cmd.run'](cmd, python_shell=False).splitlines()
     return out

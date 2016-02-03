@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
+
+# Import Python libs
+from __future__ import absolute_import
 from contextlib import contextmanager
+
+# Import Salt Testing libs
 from salttesting import skipIf, TestCase
 from salttesting.mock import NO_MOCK, NO_MOCK_REASON, MagicMock
 
@@ -100,3 +105,8 @@ class DockerStateTestCase(TestCase):
                                   'comment': ('docked_unless execution'
                                               ' succeeded'),
                                   'changes': {}})
+
+
+if __name__ == '__main__':
+    from integration import run_tests
+    run_tests(DockerStateTestCase, needs_daemon=False)

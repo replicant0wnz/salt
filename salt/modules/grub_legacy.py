@@ -2,6 +2,7 @@
 '''
 Support for GRUB Legacy
 '''
+from __future__ import absolute_import
 
 # Import python libs
 import os
@@ -21,7 +22,8 @@ def __virtual__():
     '''
     if os.path.exists(_detect_conf()):
         return __virtualname__
-    return False
+    return (False, 'The grub_legacy execution module cannot be loaded: '
+       'the grub config file does not exist in /boot/grub/')
 
 
 @decorators.memoize

@@ -28,7 +28,7 @@
 
       <exec_method type="method"
                    name="start"
-                   exec="SALT_PREFIX/bin/salt-minion"
+                   exec="/usr/sbin/auditconfig -setaudit 0 lo 0,0,localhost 5417 SALT_PREFIX/bin/salt-minion"
                    timeout_seconds="60">
         <method_context>
           <method_environment>
@@ -56,7 +56,7 @@
 
         <documentation>
           <doc_link name="SaltStack Documentation"
-                    uri="http://docs.saltstack.org"/>
+                    uri="http://docs.saltstack.com"/>
         </documentation>
       </template>
     </service>

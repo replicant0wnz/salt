@@ -18,7 +18,7 @@ Management of MySQL users
     Authentication overrides have been added.
 
 The MySQL authentication information specified in the minion config file can be
-overidden in states using the following arguments: ``connection_host``,
+overridden in states using the following arguments: ``connection_host``,
 ``connection_port``, ``connection_user``, ``connection_pass``,
 ``connection_db``, ``connection_unix_socket``, ``connection_default_file`` and
 ``connection_charset``.
@@ -34,7 +34,13 @@ overidden in states using the following arguments: ``connection_host``,
         - connection_charset: utf8
         - saltenv:
           - LC_ALL: "en_US.utf8"
+
+
+This state is not able to grant permissions for the user. See
+:py:mod:`salt.states.mysql_grants` for further instructions.
+
 '''
+from __future__ import absolute_import
 
 # Import python libs
 import sys
@@ -66,6 +72,7 @@ def present(name,
             password_hash=None,
             allow_passwordless=False,
             unix_socket=False,
+            password_column='Password',
             **connection_args):
     '''
     Ensure that the named user is present with the specified properties. A
@@ -99,11 +106,11 @@ def present(name,
         If ``True``, then ``password`` and ``password_hash`` can be omitted to
         permit a passwordless login.
 
-    unix_socket
-        If ``True`` and allow_passwordless is ``True`` then will be used unix_socket auth plugin.
+        .. versionadded:: 0.16.2
 
-    .. note::
-        The ``allow_passwordless`` option will be available in version 0.16.2.
+    unix_socket
+        If ``True`` and allow_passwordless is ``True``, the unix_socket auth
+        plugin will be used.
     '''
     ret = {'name': name,
            'changes': {},
@@ -120,7 +127,7 @@ def present(name,
             ret['result'] = False
             return ret
         else:
-            if __salt__['mysql.user_exists'](name, host, passwordless=True, unix_socket=unix_socket,
+            if __salt__['mysql.user_exists'](name, host, passwordless=True, unix_socket=unix_socket, password_column=password_column,
                                              **connection_args):
                 ret['comment'] += ' with passwordless login'
                 return ret
@@ -131,7 +138,7 @@ def present(name,
                     ret['result'] = False
                     return ret
     else:
-        if __salt__['mysql.user_exists'](name, host, password, password_hash, unix_socket=unix_socket,
+        if __salt__['mysql.user_exists'](name, host, password, password_hash, unix_socket=unix_socket, password_column=password_column,
                                          **connection_args):
             ret['comment'] += ' with the desired password'
             if password_hash and not password:
@@ -204,7 +211,7 @@ def present(name,
 
         if __salt__['mysql.user_create'](name, host,
                                          password, password_hash,
-                                         allow_passwordless, unix_socket=unix_socket,
+                                         allow_passwordless, unix_socket=unix_socket, password_column=password_column,
                                          **connection_args):
             ret['comment'] = \
                 'The user {0}@{1} has been added'.format(name, host)

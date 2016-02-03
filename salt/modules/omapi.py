@@ -11,6 +11,7 @@ config or pillar:
 
 :depends: pypureomapi Python module
 '''
+from __future__ import absolute_import
 # Import python libs
 import logging
 import struct
@@ -32,7 +33,8 @@ def __virtual__():
     '''
     if omapi_support:
         return 'omapi'
-    return False
+    return (False, 'The omapi execution module cannot be loaded: '
+            'the pypureomapi python library is not available.')
 
 
 def _conn():
@@ -78,9 +80,9 @@ def add_host(mac, name=None, ip=None, ddns=False, group=None,
     if group:
         msg.obj.append(('group', group))
     if supersede_host:
-        statements += 'option host-name {0}; '.format(name)
+        statements += 'option host-name "{0}"; '.format(name)
     if ddns and name:
-        statements += 'ddns-hostname {0}; '.format(name)
+        statements += 'ddns-hostname "{0}"; '.format(name)
     if statements:
         msg.obj.append(('statements', statements))
     response = o.query_server(msg)

@@ -3,6 +3,10 @@
     :codeauthor: :email:`Nicole Thomas <nicole@saltstack.com>`
 '''
 
+# Import python libs
+from __future__ import absolute_import
+import grp
+
 # Import Salt Testing Libs
 from salttesting import TestCase
 from salttesting.mock import MagicMock, patch
@@ -10,9 +14,6 @@ from salttesting.mock import MagicMock, patch
 # Import Salt Libs
 from salt.modules import mac_group
 from salt.exceptions import SaltInvocationError, CommandExecutionError
-
-# Import python Libs
-import grp
 
 
 class MacGroupTestCase(TestCase):
@@ -26,7 +27,7 @@ class MacGroupTestCase(TestCase):
     mock_group = {'passwd': '*', 'gid': 0, 'name': 'test', 'members': ['root']}
     mock_getgrall = [grp.struct_group(('foo', '*', 20, ['test']))]
 
-    # 'add' function tests: 5
+    # 'add' function tests: 6
 
     @patch('salt.modules.mac_group.info', MagicMock(return_value=mock_group))
     def test_add_group_exists(self):
@@ -57,6 +58,15 @@ class MacGroupTestCase(TestCase):
         self.assertRaises(SaltInvocationError, mac_group.add, 'foo', 'foo')
 
     @patch('salt.modules.mac_group.info', MagicMock(return_value={}))
+    @patch('salt.modules.mac_group._list_gids', MagicMock(return_value=['3456']))
+    def test_add_gid_exists(self):
+        '''
+        Tests if the gid is already in use or not
+        '''
+        self.assertRaises(CommandExecutionError, mac_group.add, 'foo', 3456)
+
+    @patch('salt.modules.mac_group.info', MagicMock(return_value={}))
+    @patch('salt.modules.mac_group._list_gids', MagicMock(return_value=[]))
     def test_add(self):
         '''
         Tests if specified group was added

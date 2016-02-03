@@ -2,15 +2,29 @@
 '''
 Read in the roster from a flat file using the renderer system
 '''
+from __future__ import absolute_import
 
 # Import python libs
-import os
 import fnmatch
 import re
+
+# Try to import range from https://github.com/ytoolshed/range
+HAS_RANGE = False
+try:
+    import seco.range
+    HAS_RANGE = True
+except ImportError:
+    pass
+# pylint: enable=import-error
 
 # Import Salt libs
 import salt.loader
 from salt.template import compile_template
+from salt.ext.six import string_types
+from salt.roster import get_roster_file
+
+import logging
+log = logging.getLogger(__name__)
 
 
 def targets(tgt, tgt_type='glob', **kwargs):
@@ -18,17 +32,14 @@ def targets(tgt, tgt_type='glob', **kwargs):
     Return the targets from the flat yaml file, checks opts for location but
     defaults to /etc/salt/roster
     '''
-    if __opts__.get('roster_file'):
-        template = __opts__.get('roster_file')
-    elif os.path.isfile(__opts__['conf_file']) or not os.path.exists(__opts__['conf_file']):
-        template = os.path.join(
-                os.path.dirname(__opts__['conf_file']),
-                'roster')
-    else:
-        template = os.path.join(__opts__['conf_file'], 'roster')
+    template = get_roster_file(__opts__)
+
     rend = salt.loader.render(__opts__, {})
     raw = compile_template(template, rend, __opts__['renderer'], **kwargs)
-    rmatcher = RosterMatcher(raw, tgt, tgt_type, 'ipv4')
+    conditioned_raw = {}
+    for minion in raw:
+        conditioned_raw[str(minion)] = raw[minion]
+    rmatcher = RosterMatcher(conditioned_raw, tgt, tgt_type, 'ipv4')
     return rmatcher.targets()
 
 
@@ -75,12 +86,71 @@ class RosterMatcher(object):
                     minions[minion] = data
         return minions
 
+    def ret_list_minions(self):
+        '''
+        Return minions that match via list
+        '''
+        minions = {}
+        if not isinstance(self.tgt, list):
+            self.tgt = self.tgt.split(',')
+        for minion in self.raw:
+            if minion in self.tgt:
+                data = self.get_data(minion)
+                if data:
+                    minions[minion] = data
+        return minions
+
+    def ret_nodegroup_minions(self):
+        '''
+        Return minions which match the special list-only groups defined by
+        ssh_list_nodegroups
+        '''
+        minions = {}
+        nodegroup = __opts__.get('ssh_list_nodegroups', {}).get(self.tgt, [])
+        if not isinstance(nodegroup, list):
+            nodegroup = nodegroup.split(',')
+        for minion in self.raw:
+            if minion in nodegroup:
+                data = self.get_data(minion)
+                if data:
+                    minions[minion] = data
+        return minions
+
+    def ret_range_minions(self):
+        '''
+        Return minions that are returned by a range query
+        '''
+        if HAS_RANGE is False:
+            raise RuntimeError("Python lib 'seco.range' is not available")
+
+        minions = {}
+        range_hosts = _convert_range_to_list(self.tgt, __opts__['range_server'])
+
+        for minion in self.raw:
+            if minion in range_hosts:
+                data = self.get_data(minion)
+                if data:
+                    minions[minion] = data
+        return minions
+
     def get_data(self, minion):
         '''
         Return the configured ip
         '''
-        if isinstance(self.raw[minion], basestring):
+        if isinstance(self.raw[minion], string_types):
             return {'host': self.raw[minion]}
         if isinstance(self.raw[minion], dict):
             return self.raw[minion]
         return False
+
+
+def _convert_range_to_list(tgt, range_server):
+    '''
+    convert a seco.range range into a list target
+    '''
+    r = seco.range.Range(range_server)
+    try:
+        return r.expand(tgt)
+    except seco.range.RangeException as err:
+        log.error('Range server exception: {0}'.format(err))
+        return []
